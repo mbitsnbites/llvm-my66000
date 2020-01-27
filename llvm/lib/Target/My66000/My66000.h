@@ -1,0 +1,56 @@
+//===-- My66000.h - Top-level interface for My66000 representation --*- C++ -*-===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// This file contains the entry points for global functions defined in the LLVM
+// My66000 back-end.
+//
+//===----------------------------------------------------------------------===//
+
+#ifndef LLVM_LIB_TARGET_MY66000_MY66000_H
+#define LLVM_LIB_TARGET_MY66000_MY66000_H
+
+#include "MCTargetDesc/My66000MCTargetDesc.h"
+#include "llvm/Target/TargetMachine.h"
+
+namespace llvm {
+  class FunctionPass;
+  class ModulePass;
+  class TargetMachine;
+  class My66000TargetMachine;
+  class formatted_raw_ostream;
+
+  void initializeMy66000LowerThreadLocalPass(PassRegistry &p);
+
+  FunctionPass *createMy66000FrameToArgsOffsetEliminationPass();
+  FunctionPass *createMy66000ISelDag(My66000TargetMachine &TM,
+                                   CodeGenOpt::Level OptLevel);
+  ModulePass *createMy66000LowerThreadLocalPass();
+
+  // Condition Codes used with BRcond
+  namespace MYCC {
+    enum CondCodes {
+	NM=0,  NN,  EQ0, NE0, GE0, GT0, LE0, LT0,	// integer
+	FCM=8, FUN, FEQ, FNE, FGE, FLT, FLE, FGT,	// float
+	FDE=16, FIF=18, FNA=20, FNEG=22,		// float
+	IN=24, EXIT, RFE=30, AL=31
+    };
+  }
+  // Condition Bits resulting from CMP
+  namespace MYCB {
+    enum CondBits {
+	NE=0, EQ,
+	GT=2, GE, LT, LE,	// signed
+	HI=10, HS, LO, LS,	// unsigned
+	SIN=16, FIN, CIN, RIN,	// range
+	NM=34, N, Z, P, SM, UM,	// number line
+    };
+  }
+
+} // end namespace llvm;
+
+#endif

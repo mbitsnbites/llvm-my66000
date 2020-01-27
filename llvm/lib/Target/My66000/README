@@ -1,0 +1,32 @@
+This is a very experimental backend for the My66000 architecture designed
+by Mitch Alsup.
+Lots of things do not work yet, see the ToDo list below.
+
+Use the normal LLVM build process with the added cmake flag
+  -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD="My66000"
+
+
+Usage Restrictions:
+Must use --frame-pointer=none.
+
+********
+* ToDo *
+********
+
+* Implement floating point.  There is not a separate register set for
+  floating point.
+
+* Implement frame pointer.
+
+* Implement store immediate.
+
+* Implement predicated instruction sequences.
+
+* Produce more compact jump tables.
+
+* Implement code models:
+  small - all code fits in 28 bits
+  large - all external jumps must be 64 bits.
+
+* Implement ELF output.  This could be a lot of work.
+

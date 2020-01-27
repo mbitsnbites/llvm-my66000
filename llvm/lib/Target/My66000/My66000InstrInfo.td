@@ -1,0 +1,467 @@
+//===- My66000InstrInfo.td - Instr Description for My66000 -*- tablegen -*-===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+
+include "My66000InstrFormats.td"
+
+//
+// Operand definitions
+//
+def uimm16 : Operand<i64>, ImmLeaf<i64,
+		[{ return Imm >= 0 && Imm <= 65535; }]>;
+def uimm32 : Operand<i64>, ImmLeaf<i64,
+		[{ return Imm >= 0 && Imm <= 4294967295; }]>;
+def uneed32: Operand<i64>, ImmLeaf<i64,
+		[{ return Imm >= 65536 && Imm <= 4294967295; }]>;
+def uneed64: Operand<i64>, ImmLeaf<i64,
+		[{ return (uint64_t)(Imm) >= 4294967296; }]>;
+def simm16 : Operand<i64>, ImmLeaf<i64,
+		[{ return Imm >= -32768 && Imm <= 32767; }]>;
+def simm32 : Operand<i64>, ImmLeaf<i64,
+		[{ return Imm >= -2147483648 && Imm <= 2147483647; }]>;
+def sneed32: Operand<i64>, ImmLeaf<i64,
+		[{ return (Imm >= -2147483648 && Imm <-32768) ||
+			  (Imm <=  2147483647 && Imm > 32767); }]>;
+def sneed64: Operand<i64>, ImmLeaf<i64,
+		[{ return (Imm < -2147483648 || Imm > 2147483647); }]>;
+
+def shfamt : Operand<i64>, ImmLeaf<i64,
+		[{ return Imm >= 0 && Imm <= 63; }]>;
+def shfinx: Operand<i64>, ImmLeaf<i64,
+		[{ return Imm >= 0 && Imm <= 3; }]>;
+def gbladr : Operand<iPTR>;
+def brtarget : Operand<OtherVT>;
+def calltarget : Operand<OtherVT>;
+def ccode : Operand<i64>;
+
+//
+// Type profiles
+//
+def SDT_BRcond :	SDTypeProfile<0, 3, [SDTCisVT<0, OtherVT>,
+					     SDTCisVT<1, i64>,
+					     SDTCisVT<2, i64>]>;
+def SDT_BRcc :		SDTypeProfile<0, 3, [SDTCisVT<0, OtherVT>,
+					     SDTCisVT<1, i64>,
+					     SDTCisVT<2, i64>]>;
+def SDT_CALL : 		SDTypeProfile<0, 1, [SDTCisPtrTy<0>]>;
+//
+// My66000 specific DAG Nodes.
+//
+
+def callseq_start : SDNode<"ISD::CALLSEQ_START",
+			SDCallSeqStart<[ SDTCisVT<0, i64>,
+                                         SDTCisVT<1, i64> ]>,
+			[SDNPHasChain, SDNPOutGlue]>;
+def callseq_end :   SDNode<"ISD::CALLSEQ_END",
+			SDCallSeqEnd<[ SDTCisVT<0, i64>,
+                                       SDTCisVT<1, i64> ]>,
+			[SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
+def myRET :	    SDNode<"My66000ISD::RET", SDTNone,
+			[SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
+def myBRcond :	    SDNode<"My66000ISD::BRcond", SDT_BRcond,
+			[SDNPHasChain]>;
+def myBRcc :	    SDNode<"My66000ISD::BRcc", SDT_BRcc,
+			[SDNPHasChain]>;
+def myCALL :        SDNode<"My66000ISD::CALL",
+                        SDTypeProfile<0, -1, [SDTCisPtrTy<0>]>,
+			[SDNPHasChain, SDNPOptInGlue, SDNPOutGlue, SDNPVariadic]>;
+def myCALLI :	    SDNode<"My66000ISD::CALLI", SDT_CALL,
+			[SDNPHasChain, SDNPOptInGlue, SDNPOutGlue, SDNPVariadic]>;
+def myCMP :	    SDNode<"My66000ISD::CMP", SDTIntBinOp, []>;
+def myEXT :	    SDNode<"My66000ISD::EXT",
+			SDTypeProfile<1, 3,
+			  [SDTCisSameAs<0, 1>,SDTCisVT<2, i64>, SDTCisVT<3, i64>]>,
+			[]>;
+def myCMOV:	    SDNode<"My66000ISD::CMOV",
+			SDTypeProfile<1, 3,
+			  [SDTCisSameAs<0, 1>,SDTCisSameAs<0, 2>,SDTCisVT<3, i64>]>,
+			[]>;
+def myWRAPPER:	    SDNode<"My66000ISD::WRAPPER",
+			SDTypeProfile<1, 1,
+			  [SDTCisSameAs<0, 1>,SDTCisPtrTy<0>]>,
+			[]>;
+
+//
+// ALU RR
+//
+multiclass ALUrr<string OpName, bits<6>OpC, bits<5>Flags,
+		   SDPatternOperator OpNode> {
+  def rr : ALU_RR<OpC, Flags,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
+	!strconcat(OpName, "\t$rd,$rs1,$rs2"),
+	[(set GRegs:$rd, (OpNode GRegs:$rs1, GRegs:$rs2))]>;
+}
+defm ADD  : ALUrr<"add",  0b100000, 0b00000, add>;
+defm MUL  : ALUrr<"mul",  0b100001, 0b00000, mul>;
+defm UDIV : ALUrr<"div",  0b100010, 0b00000, udiv>;
+defm SDIV : ALUrr<"divs", 0b100010, 0b00010, sdiv>;
+let isCompare = 1 in {
+defm CMP  : ALUrr<"cmp",  0b100100, 0b00000, myCMP>;
+}
+defm OR   : ALUrr<"or",   0b101000, 0b00000, or>;
+defm XOR  : ALUrr<"xor",  0b101001, 0b00000, xor>;
+defm AND  : ALUrr<"and",  0b101010, 0b00000, and>;
+defm UMAX : ALUrr<"max",  0b100110, 0b00000, umax>;
+defm UMIN : ALUrr<"min",  0b100111, 0b00000, umin>;
+defm SMAX : ALUrr<"maxs", 0b100110, 0b00010, smax>;
+defm SMIN : ALUrr<"mins", 0b100111, 0b00010, smin>;
+defm SLL  : ALUrr<"sll",  0b101101, 0b00000, shl>;
+defm SRL  : ALUrr<"srl",  0b101100, 0b00000, srl>;
+defm SRA  : ALUrr<"sra",  0b101100, 0b00010, sra>;
+
+//
+// variations of ALU_RR
+//
+def SUBrr : ALU_RR<0b100000, 0b00100,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
+	"add\t$rd,$rs1,-$rs2",
+	[(set GRegs:$rd, (sub GRegs:$rs1, GRegs:$rs2))]>;
+// both a*-b and -a*b are expressed as -(a*b)
+def MULrn : ALU_RR<0b100001, 0b00100,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
+	"mul\t$rd,$rs1,-$rs2",
+	[(set GRegs:$rd, (ineg (mul GRegs:$rs1, GRegs:$rs2)))]>;
+def NORrr : ALU_RR<0b101010, 0b01100,			// this is ANDnn
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
+	"and\t$rd,-$rs1,-$rs2",
+	[(set GRegs:$rd, (not (or GRegs:$rs1, GRegs:$rs2)))]>;
+def NANDrr : ALU_RR<0b101000, 0b01100,			// this is ORnn
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
+	"or\t$rd,-$rs1,-$rs2",
+	[(set GRegs:$rd, (not (and GRegs:$rs1, GRegs:$rs2)))]>;
+def SMAXrn : ALU_RR<0b100110, 0b00110,			// used by ABS
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
+	"maxs\t$rd,$rs1,-$rs2",
+	[]>;
+def : Pat<(abs GRegs:$rs1),
+	  (SMAXrn GRegs:$rs1, GRegs:$rs1)>;
+//
+// ALU RW
+//
+multiclass ALUrw<string OpName, bits<6>OpC, bits<5>Flags, string Operand,
+		   SDPatternOperator OpNode> {
+  def rw : ALU_RW<OpC, Flags,
+	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm),
+	!strconcat(OpName, "\t$rd,$rs1,#$imm"),
+	[(set GRegs:$rd, (OpNode GRegs:$rs1, Operand:$imm))]>;
+}
+defm ADD  : ALUrw<"add",  0b100000, 0b10000, sneed32, add>;
+defm MUL  : ALUrw<"mul",  0b100001, 0b10000, sneed32, mul>;
+defm DIV  : ALUrw<"div",  0b100010, 0b10000, sneed32, udiv>;
+defm OR   : ALUrw<"or",   0b101000, 0b10000, uneed32, or>;
+defm XOR  : ALUrw<"xor",  0b101001, 0b10000, uneed32, xor>;
+defm AND  : ALUrw<"and",  0b101010, 0b10000, uneed32, and>;
+let isCompare = 1 in {
+defm CMP  : ALUrw<"cmp",  0b100100, 0b10000, sneed32, myCMP>;
+}
+
+//
+// ALU RD
+//
+multiclass ALUrd<string OpName, bits<6>OpC, bits<5>Flags, string Operand,
+		   SDPatternOperator OpNode> {
+  def rd : ALU_RD<OpC, Flags,
+	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm),
+	!strconcat(OpName, "\t$rd,$rs1,#$imm"),
+	[(set GRegs:$rd, (OpNode GRegs:$rs1, Operand:$imm))]>;
+}
+defm OR   : ALUrd<"or",   0b101000, 0b10000, uneed64, or>;
+defm XOR  : ALUrd<"xor",  0b101001, 0b10000, uneed64, xor>;
+defm AND  : ALUrd<"and",  0b101010, 0b10000, uneed64, and>;
+let isCompare = 1 in {
+defm CMP  : ALUrd<"cmp",  0b100100, 0b10000, sneed64, myCMP>;
+}
+
+//
+// ALU WR
+//
+multiclass ALUwr<string OpName, bits<6>OpC, bits<5>Flags, string Operand,
+		   SDPatternOperator OpNode> {
+  def wr : ALU_WR<OpC, Flags,
+	(outs GRegs:$rd), (ins i64imm:$imm, GRegs:$rs2),
+	!strconcat(OpName, "\t$rd,#$imm,$rs2"),
+	[(set GRegs:$rd, (OpNode Operand:$imm, GRegs:$rs2))]>;
+}
+// Only non-commutative operations allowed
+defm DIV  : ALUwr<"div",  0b100010, 0b10000, simm32, udiv>;
+def SUBwr : ALU_RR<0b100000, 0b00100,
+	(outs GRegs:$rd), (ins i64imm:$imm, GRegs:$rs2),
+	"add\t$rd,#$imm,-$rs2",
+	[(set GRegs:$rd, (sub simm32:$imm, GRegs:$rs2))]>;
+
+//
+// ALU RI
+//
+multiclass ALUri<string OpName, bits<6>OpC, string Operand,
+		   SDPatternOperator OpNode> {
+  def ri : ALU_RI<OpC,
+	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm),
+	!strconcat(OpName, "\t$rd,$rs1,#$imm"),
+	[(set GRegs:$rd, (OpNode GRegs:$rs1, Operand:$imm))]>;
+}
+defm ADD : ALUri<"add", 0b110001, simm16, add>;
+defm MUL : ALUri<"mul", 0b110010, simm16, mul>;
+defm DIV : ALUri<"div", 0b110011, simm16, udiv>;
+let isCompare = 1 in {
+defm CMP : ALUri<"cmp", 0b110100, simm16, myCMP>;
+}
+defm OR  : ALUri<"or",  0b111000, uimm16, or>;
+defm XOR : ALUri<"xor", 0b111001, uimm16, xor>;
+defm AND : ALUri<"and", 0b111010, uimm16, and>;
+
+//
+// MOVs
+//
+// Immediate 16-bit signed extended
+let isAsCheapAsAMove = 1 in {
+def MOVri : ALU_RI<0b111011,
+	(outs GRegs:$rd), (ins i64imm:$imm),
+	"mov\t$rd,#$imm",
+	[(set GRegs:$rd, simm16:$imm)]>
+	{ let rs1 = 0b00000; }
+}
+
+// Immediate 32-bit signed extended
+def MOVrw : ALU_RRR<0b000, 0b101,
+	(outs GRegs:$rd), (ins i64imm:$imm),
+	"mov\t$rd,#$imm",
+	[(set GRegs:$rd, simm32:$imm)]>
+	{ let rs1 = 0b00000; let rs2 = 0b00000; let rs3 = 0b00000; }
+
+// Immediate 64-bit
+def MOVrd : ALU_RRR<0b000, 0b111,
+	(outs GRegs:$rd), (ins i64imm:$imm),
+	"mov\t$rd,#$imm",
+	[(set GRegs:$rd, uneed64:$imm)]>
+	{ let rs1 = 0b00000; let rs2 = 0b00000; let rs3 = 0b00000; }
+
+// Reg to Reg never matches, just built to copyPhysReg
+def MOVrr : ALU_RRR<0b000, 0b010,
+	(outs GRegs:$rd), (ins GRegs:$rs2),
+	"mov\t$rd,$rs2",
+	[]>
+	{ let rs1 = 0b00000; let rs3 = 0b00000; }
+
+def CMOVrrr : ALU_RRR<0b000, 0b001,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2, GRegs:$rs3),
+	"cmov\t$rd,$rs3,$rs1,$rs2",
+	[(set GRegs:$rd, (myCMOV GRegs:$rs1, GRegs:$rs2, GRegs:$rs3))]>;
+
+
+//
+// Shifts with immediate counts
+//
+// Generated by DAGToDAG
+def SLLri : SHF_RI<0b1010,
+	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$w, i64imm:$o),
+	"sll\t$rd,$rs1,<$w:$o>",
+	[]>;
+def SRLri : SHF_RI<0b1000,
+	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$w, i64imm:$o),
+	"srl\t$rd,$rs1,<$w:$o>",
+	[]>;
+def SRAri : SHF_RI<0b1001,
+	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$w, i64imm:$o),
+	"sra\t$rd,$rs1,<$w:$o>",
+	[]>;
+// Patterns for simple shifts
+def : Pat<(shl GRegs:$rs1, shfamt:$imm),
+	  (SLLri GRegs:$rs1, 0, shfamt:$imm)>;
+def : Pat<(srl GRegs:$rs1, shfamt:$imm),
+	  (SRLri GRegs:$rs1, 0, shfamt:$imm)>;
+def : Pat<(sra GRegs:$rs1, shfamt:$imm),
+	  (SRAri GRegs:$rs1, 0, shfamt:$imm)>;
+def : Pat<(myEXT GRegs:$rs1, shfamt:$imm1, shfamt:$imm2),
+	  (SRLri GRegs:$rs1, shfamt:$imm1, shfamt:$imm2)>;
+
+// Generated by DAGToDAG
+def INSrrw : ALU_RRR<0b010, 0b100,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs: $rs2, i32imm:$w, i32imm:$o),
+	"ins\t$rd,$rs1,$rs2,#<$w:$o>",
+	[]>;
+
+//
+// Misc 1 operand instructions
+//
+def CTLZ : R1<0b001001, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"ctlz\t$rd,$rs1",
+	[(set GRegs:$rd, (ctlz GRegs:$rs1))]>;
+def CTTZ : R1<0b001001, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"cttz\t$rd,$rs1",
+	[(set GRegs:$rd, (cttz GRegs:$rs1))]>;
+def CTLO : R1<0b001001, 0b01000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"ctlz\t$rd,-$rs1",
+	[(set GRegs:$rd, (ctlz (xor GRegs:$rs1 ,-1)))]>;
+def CTTO : R1<0b001001, 0b01010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"cttz\t$rd,-$rs1",
+	[(set GRegs:$rd, (cttz (xor GRegs:$rs1 ,-1)))]>;
+def POPO : R1<0b001001, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"pop\t$rd,$rs1",
+	[(set GRegs:$rd, (ctpop GRegs:$rs1))]>;
+def POPZ : R1<0b001001, 0b01000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"pop\t$rd,-$rs1",
+	[(set GRegs:$rd, (ctpop (xor GRegs:$rs1 ,-1)))]>;
+
+//
+// Load/Store
+//
+// Addressing modes.
+def ADDRrr : ComplexPattern<iPTR, 4, "SelectADDRrr", [], []>;
+def ADDRri : ComplexPattern<iPTR, 2, "SelectADDRri", [frameindex], []>;
+
+def MEMri : Operand<iPTR> {
+  let PrintMethod = "printMEMriOperand";
+  let MIOperandInfo = (ops ptr_rc, i64imm);
+//  let ParserMatchClass = My66000MEMriAsmOperand;
+}
+def MEMrr : Operand<iPTR> {
+  let PrintMethod = "printMEMrrOperand";
+  let MIOperandInfo = (ops ptr_rc, ptr_rc, i64imm, i64imm);
+//  let ParserMatchClass = My66000MEMrrAsmOperand;
+}
+
+//
+// Load
+//
+multiclass Load<string OpName, bits<6>OpCri, bits<6>OpCrr, SDPatternOperator OpNode> {
+  def ri : LDST_BD<OpCri,
+	(outs GRegs:$rd), (ins MEMri:$addr),
+	!strconcat(OpName, "\t$rd,[$addr]"),
+	[(set GRegs:$rd, (OpNode ADDRri:$addr))]>;
+  def rr : LDST_RX<OpCrr, 0b00000,
+	(outs GRegs:$rd), (ins MEMrr:$addr),
+	!strconcat(OpName, "\t$rd,[$addr]"),
+	[(set GRegs:$rd, (OpNode ADDRrr:$addr))]>;
+}
+let mayLoad = 1 in {
+  defm LDD  : Load<"ldd",  0b100011, 0b000011, load>;
+  defm LDUW : Load<"lduw", 0b100010, 0b000010, zextloadi32>;
+  defm LDUH : Load<"lduh", 0b100001, 0b000001, zextloadi16>;
+  defm LDUB : Load<"ldub", 0b100000, 0b000000, zextloadi8>;
+  defm LDSW : Load<"ldsw", 0b100110, 0b000110, sextloadi32>;
+  defm LDSH : Load<"ldsh", 0b100101, 0b000101, sextloadi16>;
+  defm LDSB : Load<"ldsb", 0b100100, 0b000100, sextloadi8>;
+}
+// Map integer extload's to zextloads.
+def : Pat<(i64 (extloadi32 ADDRrr:$src)), (LDUWrr ADDRrr:$src)>;
+def : Pat<(i64 (extloadi16 ADDRrr:$src)), (LDUHrr ADDRrr:$src)>;
+def : Pat<(i64 (extloadi8  ADDRrr:$src)), (LDUBrr ADDRrr:$src)>;
+def : Pat<(i64 (extloadi32 ADDRri:$src)), (LDUWri ADDRri:$src)>;
+def : Pat<(i64 (extloadi16 ADDRri:$src)), (LDUHri ADDRri:$src)>;
+def : Pat<(i64 (extloadi8  ADDRri:$src)), (LDUBri ADDRri:$src)>;
+
+//
+// Load address
+//
+def LArr : LDST_RX<0b000111, 0b00000,
+	(outs GRegs:$rd), (ins MEMrr:$addr),
+	"la\t$rd,[$addr]",
+	[]>;
+
+def : Pat<(add (add GRegs:$rb, (shl GRegs:$rx, shfinx:$sc)), imm:$disp),
+	  (LArr GRegs:$rb, GRegs:$rx, shfinx:$sc, imm:$disp)>;
+def : Pat<(add GRegs:$rb, (shl GRegs:$rx, shfinx:$sc)),
+	  (LArr GRegs:$rb, GRegs:$rx, shfinx:$sc, 0)>;
+// FIXME - can the following be done with a Pat<>?
+def LAg  : LDST_RX<0b000111, 0b00000,
+	(outs GRegs:$rd), (ins gbladr:$addr),
+	"la\t$rd,[ip,$addr]",
+	[(set GRegs:$rd, (myWRAPPER tglobaladdr:$addr))]>;
+def LAgx : LDST_RX<0b000111, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rx, gbladr:$addr),
+	"la\t$rd,[ip,$rx,$addr]",
+	[(set GRegs:$rd, (add GRegs:$rx, (myWRAPPER tglobaladdr:$addr)))]>;
+def LAgxs: LDST_RX<0b000111, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rx, shfinx:$sc, gbladr:$addr),
+	"la\t$rd,[ip,$rx<<$sc,$addr]",
+	[(set GRegs:$rd,
+	 (add (shl GRegs:$rx, shfinx:$sc), (myWRAPPER tglobaladdr:$addr)))]>;
+
+//
+// Store
+//
+multiclass Store<string OpName, bits<6>OpCri, bits<6>OpCrr, SDPatternOperator OpNode> {
+  def ri : LDST_BD<OpCri,
+	(outs), (ins GRegs:$rd, MEMri:$addr),
+	!strconcat(OpName, "\t$rd,[$addr]"),
+	[(OpNode GRegs:$rd, ADDRri:$addr)]>;
+  def rr : LDST_RX<OpCrr, 0b00000,
+	(outs), (ins GRegs:$rd, MEMrr:$addr),
+	!strconcat(OpName, "\t$rd,[$addr]"),
+	[(OpNode GRegs:$rd, ADDRrr:$addr)]>;
+}
+let mayStore = 1 in {
+  defm STD : Store<"std", 0b101011, 0b001011, store>;
+  defm STW : Store<"stw", 0b101010, 0b001010, truncstorei32>;
+  defm STH : Store<"sth", 0b101001, 0b001001, truncstorei16>;
+  defm STB : Store<"stb", 0b101000, 0b001000, truncstorei8>;
+}
+
+
+//
+// Flow control
+//
+let isTerminator = 1, isReturn = 1, isBarrier = 1 in {
+def RET: Simple<0b001101, 0b00000000000100000000000000,
+	(outs), (ins),
+	"ret",
+	[(myRET)]>;
+}
+
+let isBranch = 1, isTerminator = 1, isBarrier = 1 in {
+def BRU : BR<0b011110,
+	(outs), (ins brtarget:$adr),
+	"br\t$adr",
+	[(br bb:$adr)]>;
+}
+let isBranch = 1, isIndirectBranch = 1, isTerminator = 1, isBarrier = 1 in {
+def BRI : Simple<0b001101, 0b00000000000100000000000000,
+       (outs), (ins GRegs:$rs),
+       "jmp\t$rs",
+       [(brind GRegs:$rs)]>;
+}
+
+let isBranch = 1, isTerminator = 1 in {
+def BRC : BC<0b011010,
+	(outs), (ins brtarget:$adr, GRegs:$rs1, ccode:$cc),
+	"brc\t$cc,$rs1,$adr",
+	[(myBRcond bb:$adr, GRegs:$rs1, imm:$cc)]>;
+def BRB : BB<0b01100,
+	(outs), (ins brtarget:$adr, GRegs:$rs1, i64imm:$cb),
+	"brb1\t$cb,$rs1,$adr",
+	[(myBRcc bb:$adr, GRegs:$rs1, shfamt:$cb)]>;
+}
+
+let isCall = 1, isBarrier = 1, Defs = [R0] in {
+def CALL :  BR<0b011111,
+	(outs), (ins calltarget:$adr),
+	"call\t$adr",
+	[(myCALL tglobaladdr:$adr)]>;
+def CALLI : HR<0b00000, 0b10,
+	(outs), (ins GRegs:$rs),
+	"calli\t$rs",
+	[(myCALLI i64:$rs)]>;
+}
+def : Pat<(myCALL texternalsym:$adr), (CALL texternalsym:$adr)>;
+
+//
+// Pseudo Instructions
+//
+let Defs = [SP], Uses = [SP] in {
+def ADJCALLSTACKDOWN : Pseudo<(outs), (ins i64imm:$amt1, i64imm:$amt2),
+			      "# ADJCALLSTACKDOWN $amt1, $amt2",
+			      [(callseq_start timm:$amt1, timm:$amt2)]>;
+def ADJCALLSTACKUP :   Pseudo<(outs), (ins i64imm:$amt1, i64imm:$amt2),
+                              "# ADJCALLSTACKUP $amt1",
+                              [(callseq_end timm:$amt1, timm:$amt2)]>;
+}
