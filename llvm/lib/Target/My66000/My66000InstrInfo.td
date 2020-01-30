@@ -186,8 +186,10 @@ multiclass ALUwr<string OpName, bits<6>OpC, bits<5>Flags, string Operand,
 	!strconcat(OpName, "\t$rd,#$imm,$rs2"),
 	[(set GRegs:$rd, (OpNode Operand:$imm, GRegs:$rs2))]>;
 }
-// Only non-commutative operations allowed
+// Only non-commutative operations need apply
 defm DIV  : ALUwr<"div",  0b100010, 0b10000, simm32, udiv>;
+defm SLL  : ALUwr<"sll",  0b101101, 0b10000, simm32, shl>;
+defm SRL  : ALUwr<"srl",  0b101100, 0b00000, simm32, srl>;
 def SUBwr : ALU_RR<0b100000, 0b00100,
 	(outs GRegs:$rd), (ins i64imm:$imm, GRegs:$rs2),
 	"add\t$rd,#$imm,-$rs2",
@@ -405,6 +407,24 @@ let mayStore = 1 in {
   defm STW : Store<"stw", 0b101010, 0b001010, truncstorei32>;
   defm STH : Store<"sth", 0b101001, 0b001001, truncstorei16>;
   defm STB : Store<"stb", 0b101000, 0b001000, truncstorei8>;
+}
+
+// Because ADDRrr rejects anything ADDRri can handle, we need a pattern for both.
+multiclass StImm<string OpName, bits<6>Op, SDPatternOperator OpNode> {
+  def ii : LDST_RX<Op, 0b00000,
+	(outs), (ins i64imm:$imm, MEMri:$addr),
+	!strconcat(OpName, "\t#$imm,[$addr]"),
+	[(OpNode imm:$imm, ADDRri:$addr)]>;
+  def ir : LDST_RX<Op, 0b00000,
+	(outs), (ins i64imm:$imm, MEMrr:$addr),
+	!strconcat(OpName, "\t#$imm,[$addr]"),
+	[(OpNode imm:$imm, ADDRrr:$addr)]>;
+}
+let mayStore = 1 in {
+  defm STD : StImm<"std", 0b011011, store>;
+  defm STW : StImm<"stw", 0b011010, truncstorei32>;
+  defm STH : StImm<"sth", 0b011001, truncstorei16>;
+  defm STB : StImm<"stb", 0b011011, truncstorei8>;
 }
 
 
