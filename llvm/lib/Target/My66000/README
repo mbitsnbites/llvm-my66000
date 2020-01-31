@@ -18,15 +18,21 @@ Must use --frame-pointer=none.
 
 * Implement frame pointer.
 
-* Implement store immediate.
+* Fix tail calls so they work.
 
 * Implement predicated instruction sequences.
 
 * Produce more compact jump tables.
+
+* Compute correct instruction sizes for variable length instructions.
 
 * Implement code models:
   small - all code fits in 28 bits
   large - all external jumps must be 64 bits.
 
 * Implement ELF output.  This could be a lot of work.
+
+* Enable clang support.
+
+* Enable lld support.  (Need ELF machine code assignment.)
 

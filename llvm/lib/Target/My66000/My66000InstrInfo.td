@@ -142,54 +142,54 @@ def : Pat<(abs GRegs:$rs1),
 //
 // ALU RW
 //
-multiclass ALUrw<string OpName, bits<6>OpC, bits<5>Flags, string Operand,
+multiclass ALUrw<string OpName, bits<6>OpC, bits<5>Flags,
 		   SDPatternOperator OpNode> {
   def rw : ALU_RW<OpC, Flags,
 	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm),
 	!strconcat(OpName, "\t$rd,$rs1,#$imm"),
-	[(set GRegs:$rd, (OpNode GRegs:$rs1, Operand:$imm))]>;
+	[(set GRegs:$rd, (OpNode GRegs:$rs1, sneed32:$imm))]>;
 }
-defm ADD  : ALUrw<"add",  0b100000, 0b10000, sneed32, add>;
-defm MUL  : ALUrw<"mul",  0b100001, 0b10000, sneed32, mul>;
-defm DIV  : ALUrw<"div",  0b100010, 0b10000, sneed32, udiv>;
-defm OR   : ALUrw<"or",   0b101000, 0b10000, uneed32, or>;
-defm XOR  : ALUrw<"xor",  0b101001, 0b10000, uneed32, xor>;
-defm AND  : ALUrw<"and",  0b101010, 0b10000, uneed32, and>;
+defm ADD  : ALUrw<"add",  0b100000, 0b10000, add>;
+defm MUL  : ALUrw<"mul",  0b100001, 0b10000, mul>;
+defm DIV  : ALUrw<"div",  0b100010, 0b10000, udiv>;
+defm OR   : ALUrw<"or",   0b101000, 0b10000, or>;
+defm XOR  : ALUrw<"xor",  0b101001, 0b10000, xor>;
+defm AND  : ALUrw<"and",  0b101010, 0b10000, and>;
 let isCompare = 1 in {
-defm CMP  : ALUrw<"cmp",  0b100100, 0b10000, sneed32, myCMP>;
+defm CMP  : ALUrw<"cmp",  0b100100, 0b10000, myCMP>;
 }
 
 //
 // ALU RD
 //
-multiclass ALUrd<string OpName, bits<6>OpC, bits<5>Flags, string Operand,
+multiclass ALUrd<string OpName, bits<6>OpC, bits<5>Flags,
 		   SDPatternOperator OpNode> {
   def rd : ALU_RD<OpC, Flags,
 	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm),
 	!strconcat(OpName, "\t$rd,$rs1,#$imm"),
-	[(set GRegs:$rd, (OpNode GRegs:$rs1, Operand:$imm))]>;
+	[(set GRegs:$rd, (OpNode GRegs:$rs1, sneed64:$imm))]>;
 }
-defm OR   : ALUrd<"or",   0b101000, 0b10000, uneed64, or>;
-defm XOR  : ALUrd<"xor",  0b101001, 0b10000, uneed64, xor>;
-defm AND  : ALUrd<"and",  0b101010, 0b10000, uneed64, and>;
+defm OR   : ALUrd<"or",   0b101000, 0b10000, or>;
+defm XOR  : ALUrd<"xor",  0b101001, 0b10000, xor>;
+defm AND  : ALUrd<"and",  0b101010, 0b10000, and>;
 let isCompare = 1 in {
-defm CMP  : ALUrd<"cmp",  0b100100, 0b10000, sneed64, myCMP>;
+defm CMP  : ALUrd<"cmp",  0b100100, 0b10000, myCMP>;
 }
 
 //
 // ALU WR
 //
-multiclass ALUwr<string OpName, bits<6>OpC, bits<5>Flags, string Operand,
+multiclass ALUwr<string OpName, bits<6>OpC, bits<5>Flags,
 		   SDPatternOperator OpNode> {
   def wr : ALU_WR<OpC, Flags,
 	(outs GRegs:$rd), (ins i64imm:$imm, GRegs:$rs2),
 	!strconcat(OpName, "\t$rd,#$imm,$rs2"),
-	[(set GRegs:$rd, (OpNode Operand:$imm, GRegs:$rs2))]>;
+	[(set GRegs:$rd, (OpNode simm32:$imm, GRegs:$rs2))]>;
 }
 // Only non-commutative operations need apply
-defm DIV  : ALUwr<"div",  0b100010, 0b10000, simm32, udiv>;
-defm SLL  : ALUwr<"sll",  0b101101, 0b10000, simm32, shl>;
-defm SRL  : ALUwr<"srl",  0b101100, 0b00000, simm32, srl>;
+defm DIV  : ALUwr<"div",  0b100010, 0b10000, udiv>;
+defm SLL  : ALUwr<"sll",  0b101101, 0b10000, shl>;
+defm SRL  : ALUwr<"srl",  0b101100, 0b00000, srl>;
 def SUBwr : ALU_RR<0b100000, 0b00100,
 	(outs GRegs:$rd), (ins i64imm:$imm, GRegs:$rs2),
 	"add\t$rd,#$imm,-$rs2",
@@ -198,22 +198,21 @@ def SUBwr : ALU_RR<0b100000, 0b00100,
 //
 // ALU RI
 //
-multiclass ALUri<string OpName, bits<6>OpC, string Operand,
-		   SDPatternOperator OpNode> {
+multiclass ALUri<string OpName, bits<6>OpC, SDPatternOperator OpNode> {
   def ri : ALU_RI<OpC,
 	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm),
 	!strconcat(OpName, "\t$rd,$rs1,#$imm"),
-	[(set GRegs:$rd, (OpNode GRegs:$rs1, Operand:$imm))]>;
+	[(set GRegs:$rd, (OpNode GRegs:$rs1, simm16:$imm))]>;
 }
-defm ADD : ALUri<"add", 0b110001, simm16, add>;
-defm MUL : ALUri<"mul", 0b110010, simm16, mul>;
-defm DIV : ALUri<"div", 0b110011, simm16, udiv>;
+defm ADD : ALUri<"add", 0b110001, add>;
+defm MUL : ALUri<"mul", 0b110010, mul>;
+defm DIV : ALUri<"div", 0b110011, udiv>;
 let isCompare = 1 in {
-defm CMP : ALUri<"cmp", 0b110100, simm16, myCMP>;
+defm CMP : ALUri<"cmp", 0b110100, myCMP>;
 }
-defm OR  : ALUri<"or",  0b111000, uimm16, or>;
-defm XOR : ALUri<"xor", 0b111001, uimm16, xor>;
-defm AND : ALUri<"and", 0b111010, uimm16, and>;
+defm OR  : ALUri<"or",  0b111000, or>;
+defm XOR : ALUri<"xor", 0b111001, xor>;
+defm AND : ALUri<"and", 0b111010, and>;
 
 //
 // MOVs
