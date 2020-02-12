@@ -74,7 +74,8 @@ def myCALLI :	    SDNode<"My66000ISD::CALLI", SDT_CALL,
 def myCMP :	    SDNode<"My66000ISD::CMP", SDTIntBinOp, []>;
 def myEXT :	    SDNode<"My66000ISD::EXT",
 			SDTypeProfile<1, 3,
-			  [SDTCisSameAs<0, 1>,SDTCisVT<2, i64>, SDTCisVT<3, i64>]>,
+			[SDTCisVT<0, i64>,SDTCisVT<1, i64>,SDTCisVT<2, i64>,
+			 SDTCisVT<3, i64>]>,
 			[]>;
 def myCMOV:	    SDNode<"My66000ISD::CMOV",
 			SDTypeProfile<1, 3,
@@ -94,6 +95,18 @@ multiclass ALUrr<string OpName, bits<6>OpC, bits<5>Flags,
 	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
 	!strconcat(OpName, "\t$rd,$rs1,$rs2"),
 	[(set GRegs:$rd, (OpNode GRegs:$rs1, GRegs:$rs2))]>;
+  def rn : ALU_RR<OpC, Flags,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
+	!strconcat(OpName, "\t$rd,$rs1,-$rs2"),
+	[]>;
+  def nr : ALU_RR<OpC, Flags,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
+	!strconcat(OpName, "\t$rd,-$rs1,-$rs2"),
+	[]>;
+  def nn : ALU_RR<OpC, Flags,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
+	!strconcat(OpName, "\t$rd,-$rs1,-$rs2"),
+	[]>;
 }
 defm ADD  : ALUrr<"add",  0b100000, 0b00000, add>;
 defm MUL  : ALUrr<"mul",  0b100001, 0b00000, mul>;
@@ -113,32 +126,20 @@ defm SLL  : ALUrr<"sll",  0b101101, 0b00000, shl>;
 defm SRL  : ALUrr<"srl",  0b101100, 0b00000, srl>;
 defm SRA  : ALUrr<"sra",  0b101100, 0b00010, sra>;
 
-//
-// variations of ALU_RR
-//
-def SUBrr : ALU_RR<0b100000, 0b00100,
-	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
-	"add\t$rd,$rs1,-$rs2",
-	[(set GRegs:$rd, (sub GRegs:$rs1, GRegs:$rs2))]>;
+def SUB   : Pat<(sub GRegs:$rs1, GRegs:$rs2),
+		(ADDrn GRegs:$rs1, GRegs:$rs2)>;
+def NADD  : Pat<(ineg (add GRegs:$rs1, GRegs:$rs2)),
+		(ADDnn GRegs:$rs1, GRegs:$rs2)>;
+
 // both a*-b and -a*b are expressed as -(a*b)
-def MULrn : ALU_RR<0b100001, 0b00100,
-	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
-	"mul\t$rd,$rs1,-$rs2",
-	[(set GRegs:$rd, (ineg (mul GRegs:$rs1, GRegs:$rs2)))]>;
-def NORrr : ALU_RR<0b101010, 0b01100,			// this is ANDnn
-	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
-	"and\t$rd,-$rs1,-$rs2",
-	[(set GRegs:$rd, (not (or GRegs:$rs1, GRegs:$rs2)))]>;
-def NANDrr : ALU_RR<0b101000, 0b01100,			// this is ORnn
-	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
-	"or\t$rd,-$rs1,-$rs2",
-	[(set GRegs:$rd, (not (and GRegs:$rs1, GRegs:$rs2)))]>;
-def SMAXrn : ALU_RR<0b100110, 0b00110,			// used by ABS
-	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
-	"maxs\t$rd,$rs1,-$rs2",
-	[]>;
-def : Pat<(abs GRegs:$rs1),
-	  (SMAXrn GRegs:$rs1, GRegs:$rs1)>;
+def       : Pat<(ineg (mul GRegs:$rs1, GRegs:$rs2)),
+		(MULrn GRegs:$rs1, GRegs:$rs2)>;
+def NOR   : Pat<(not (or GRegs:$rs1, GRegs:$rs2)),
+		(ANDnn GRegs:$rs1, GRegs:$rs2)>;
+def NAND  : Pat<(not (and GRegs:$rs1, GRegs:$rs2)),
+		(ORnn GRegs:$rs1, GRegs:$rs2)>;
+def ABS   : Pat<(abs GRegs:$rs1),
+		(SMAXrn GRegs:$rs1, GRegs:$rs1)>;
 //
 // ALU RW
 //
