@@ -33,9 +33,12 @@ enum NodeType : unsigned {
   CALL,		// Branch and link (direct call)
   CALLI,	// Branch and link thru register (indirect call)
   CMP,		// CMP
+  FCMP,		// Floating CMP
   EXT,		// Extract
   CMOV,		// Conditional move
-  BRcc,		// BRcc i.e. branch bit set by CMP
+  BRcc,		// Branch on bit set by CMP
+  BRfcc,	// Branch on bit set by FCMP
+  BRbit,	// Branch on bit not set by a compare
   BRcond,	// branch compare with zero
   WRAPPER	// prefix for global address
 };

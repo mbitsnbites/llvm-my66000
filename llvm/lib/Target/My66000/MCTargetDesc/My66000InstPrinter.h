@@ -36,6 +36,7 @@ public:
   void printOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);
   void printMEMriOperand(const MCInst *MI, int opNum, raw_ostream &O);
   void printMEMrrOperand(const MCInst *MI, int opNum, raw_ostream &O);
+  void printFP64Operand(const MCInst *MI, int opNum, raw_ostream &O);
 };
 } // end namespace llvm
 

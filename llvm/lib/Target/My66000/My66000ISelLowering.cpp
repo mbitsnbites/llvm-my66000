@@ -48,9 +48,12 @@ const char *My66000TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case My66000ISD::CALL: return "My66000ISD::CALL";
   case My66000ISD::CALLI: return "My66000ISD::CALLI";
   case My66000ISD::CMP: return "My66000ISD::CMP";
+  case My66000ISD::FCMP: return "My66000ISD::FCMP";
   case My66000ISD::EXT: return "My66000ISD::EXT";
   case My66000ISD::CMOV: return "My66000ISD::CMOV";
   case My66000ISD::BRcc: return "My66000ISD::BRcc";
+  case My66000ISD::BRfcc: return "My66000ISD::BRfcc";
+  case My66000ISD::BRbit: return "My66000ISD::BRbit";
   case My66000ISD::BRcond: return "My66000ISD::BRcond";
   case My66000ISD::WRAPPER: return "My66000ISD::WRAPPER";
   }
@@ -69,6 +72,8 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
 
   // Set up the register classes.
   addRegisterClass(MVT::i64, &My66000::GRegsRegClass);
+  // Floating values use the same registers as integer.
+  addRegisterClass(MVT::f64, &My66000::GRegsRegClass);
 
   // Compute derived properties from the register classes
   computeRegisterProperties(Subtarget.getRegisterInfo());
@@ -150,6 +155,15 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   // Other expansions
   setOperationAction(ISD::STACKSAVE, MVT::Other, Expand);
   setOperationAction(ISD::STACKRESTORE, MVT::Other, Expand);
+
+  // Floating point
+  setOperationAction(ISD::ConstantFP, MVT::f64, Legal);
+  setOperationAction(ISD::FADD, MVT::f64, Legal);
+  setOperationAction(ISD::FMUL, MVT::f64, Legal);
+  setOperationAction(ISD::FDIV, MVT::f64, Legal);
+  setOperationAction(ISD::SELECT_CC, MVT::f64, Custom);
+  setOperationAction(ISD::SETCC, MVT::f64, Custom);
+  setOperationAction(ISD::BR_CC, MVT::f64, Custom);
 }
 
 //===----------------------------------------------------------------------===//
@@ -158,17 +172,31 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
 // Map to my condition bits
 static MYCB::CondBits ISDCCtoMy66000CB(ISD:: CondCode CC) {
   switch (CC) {
-  default: llvm_unreachable("Unknown integer condition code!");
+  default: llvm_unreachable("Unknown condition code!");
   case ISD::SETEQ:  return MYCB::EQ;
   case ISD::SETNE:  return MYCB::NE;
+  // signed integers and float undefined if input is a NaN
   case ISD::SETLT:  return MYCB::LT;
   case ISD::SETGT:  return MYCB::GT;
   case ISD::SETLE:  return MYCB::LE;
   case ISD::SETGE:  return MYCB::GE;
+  // unsigned integers and float unordered
+  case ISD::SETUEQ: return MYCB::EQ;
+  case ISD::SETUNE: return MYCB::NE;
   case ISD::SETULT: return MYCB::LO;
   case ISD::SETULE: return MYCB::LS;
   case ISD::SETUGT: return MYCB::HI;
   case ISD::SETUGE: return MYCB::HS;
+  // float ordered
+  case ISD::SETOEQ: return MYCB::EQ;
+  case ISD::SETONE: return MYCB::NE;
+  case ISD::SETOLT: return MYCB::LT;
+  case ISD::SETOGT: return MYCB::GT;
+  case ISD::SETOLE: return MYCB::LE;
+  case ISD::SETOGE: return MYCB::GE;
+  // float check order
+  case ISD::SETO:   return MYCB::OR;
+  case ISD::SETUO:  return MYCB::UN;
   }
 }
 
@@ -192,9 +220,15 @@ SDValue My66000TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
   SDValue RHS = Op.getOperand(1);
   ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(2))->get();
   SDLoc dl(Op);
+  unsigned inst;
 LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerSETCC\n");
   MYCB::CondBits CB = ISDCCtoMy66000CB(CC);
-  SDValue Cmp = DAG.getNode(My66000ISD::CMP, dl, MVT::i64, LHS, RHS);
+  if (LHS.getValueType().isInteger()) {
+    inst = My66000ISD::CMP;
+  } else {
+    inst = My66000ISD::FCMP;
+  }
+  SDValue Cmp = DAG.getNode(inst, dl, MVT::i64, LHS, RHS);
   return DAG.getNode(My66000ISD::EXT, dl, MVT::i64, Cmp,
 		     DAG.getConstant(1, dl, MVT::i64),
 		     DAG.getConstant(CB, dl, MVT::i64));
@@ -207,15 +241,20 @@ SDValue My66000TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) con
   SDValue FVal = Op.getOperand(3);
   ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(4))->get();
   SDLoc dl(Op);
+  unsigned inst;
 LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerSELECT_CC\n");
-  assert(LHS.getValueType() == MVT::i64 && "Only know how to SELECT_CC i64");
-  if (isNullConstant(RHS) && (CC == ISD::SETEQ || CC == ISD::SETNE)) {
-    if (CC == ISD::SETEQ)
-      std::swap(TVal, FVal);
-    return DAG.getNode(My66000ISD::CMOV, dl, TVal.getValueType(), TVal, FVal, LHS);
+  if (LHS.getValueType().isInteger()) {
+    if (isNullConstant(RHS) && (CC == ISD::SETEQ || CC == ISD::SETNE)) {
+      if (CC == ISD::SETEQ)
+        std::swap(TVal, FVal);
+      return DAG.getNode(My66000ISD::CMOV, dl, TVal.getValueType(), TVal, FVal, LHS);
+    }
+    inst = My66000ISD::CMP;
+  } else {
+    inst = My66000ISD::FCMP;
   }
   MYCB::CondBits CB = ISDCCtoMy66000CB(CC);
-  SDValue Cmp = DAG.getNode(My66000ISD::CMP, dl, MVT::i64, LHS, RHS);
+  SDValue Cmp = DAG.getNode(inst, dl, MVT::i64, LHS, RHS);
   SDValue Ext = DAG.getNode(My66000ISD::EXT, dl, MVT::i64, Cmp,
 		     DAG.getConstant(1, dl, MVT::i64),
 		     DAG.getConstant(CB, dl, MVT::i64));
@@ -230,16 +269,22 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerBR_CC\n");
   SDValue RHS = Op.getOperand(3);
   SDValue Dest = Op.getOperand(4);
   SDLoc dl(Op);
-  assert(LHS.getValueType() == MVT::i64 && "Only know how to BR_CC i64");
-  if (isNullConstant(RHS))
-  { MYCC::CondCodes cc = ISDCCtoMy66000CC(CC);
-    return DAG.getNode(My66000ISD::BRcond, dl, MVT::Other, Chain, Dest,
-		    LHS, DAG.getConstant(cc, dl, MVT::i64));
+  if (LHS.getValueType().isInteger()) {
+    if (isNullConstant(RHS))
+    { MYCC::CondCodes cc = ISDCCtoMy66000CC(CC);
+      return DAG.getNode(My66000ISD::BRcond, dl, MVT::Other, Chain, Dest,
+		         LHS, DAG.getConstant(cc, dl, MVT::i64));
+    }
+    MYCB::CondBits cb = ISDCCtoMy66000CB(CC);
+    SDValue Cmp = DAG.getNode(My66000ISD::CMP, dl, MVT::i64, LHS, RHS);
+    return DAG.getNode(My66000ISD::BRcc, dl, MVT::Other, Chain, Dest, Cmp,
+                       DAG.getConstant(cb, dl, MVT::i64));
+  } else {
+    MYCB::CondBits cb = ISDCCtoMy66000CB(CC);
+    SDValue Cmp = DAG.getNode(My66000ISD::FCMP, dl, MVT::i64, LHS, RHS);
+    return DAG.getNode(My66000ISD::BRfcc, dl, MVT::Other, Chain, Dest, Cmp,
+                       DAG.getConstant(cb, dl, MVT::i64));
   }
-  MYCB::CondBits cb = ISDCCtoMy66000CB(CC);
-  SDValue Cmp = DAG.getNode(My66000ISD::CMP, dl, MVT::i64, LHS, RHS);
-  return DAG.getNode(My66000ISD::BRcc, dl, MVT::Other, Chain, Dest, Cmp,
-                     DAG.getConstant(cb, dl, MVT::i64));
 }
 
 SDValue My66000TargetLowering::LowerSIGN_EXTEND_INREG(SDValue Op,
@@ -523,6 +568,7 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerFormalArguments\n");
         llvm_unreachable("Unhandled LowerFormalArguments type.");
       }
       case MVT::i64:
+      case MVT::f64:
         unsigned VReg = RegInfo.createVirtualRegister(&My66000::GRegsRegClass);
         RegInfo.addLiveIn(VA.getLocReg(), VReg);
         ArgIn = DAG.getCopyFromReg(Chain, dl, VReg, RegVT);

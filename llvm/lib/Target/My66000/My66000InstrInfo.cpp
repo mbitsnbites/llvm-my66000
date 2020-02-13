@@ -84,7 +84,7 @@ void My66000InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
 }
 
 static inline bool IsCondBranch(unsigned Opc) {
-  return Opc == My66000::BRC || Opc == My66000::BRB;
+  return Opc == My66000::BRC || Opc == My66000::BRIB || Opc == My66000::BRFB;
 }
 
 static inline bool IsUncondBranch(unsigned Opc) {
@@ -282,10 +282,13 @@ LLVM_DEBUG(dbgs() << "My66000InstrInfo::reverseBranchCondition\n");
 //dbgs() << "\tBRC " << Cond[2].getImm() << "\n";
      MYCC::CondCodes cc = static_cast<MYCC::CondCodes>(Cond[2].getImm());
      Cond[2].setImm(reverseBRC(cc));
-  } else {	// My66000::BRB
+     return false;
+  } else if (Cond[0].getImm() == My66000::BRIB) {
 //dbgs() << "\tBRB " << Cond[2].getImm() << "\n";
      MYCB::CondBits cb = static_cast<MYCB::CondBits>(Cond[2].getImm());
      Cond[2].setImm(reverseBRB(cb));
+     return false;
   }
-  return false;
+  // BRFB not reversible
+  return true;
 }

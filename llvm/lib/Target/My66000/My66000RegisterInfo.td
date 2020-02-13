@@ -49,7 +49,7 @@ def SP	: My66000Reg<31, "sp" >,  DwarfRegNum<[31]>;
 // The order of registers represents the preferred allocation sequence.
 // Registers are listed in the order caller-save, callee-save, specials.
 // Must list all the registers in the class.
-def GRegs : RegisterClass<"My66000", [i64], 64,
+def GRegs : RegisterClass<"My66000", [i64,f64], 64,
   (add
     (sequence "R%u", 16, 29),
     (sequence "R%u",  1, 15),

@@ -251,7 +251,7 @@ def MOVrr : ALU_RRR<0b000, 0b010,
 def CMOVrrr : ALU_RRR<0b000, 0b001,
 	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2, GRegs:$rs3),
 	"cmov\t$rd,$rs3,$rs1,$rs2",
-	[(set GRegs:$rd, (myCMOV GRegs:$rs1, GRegs:$rs2, GRegs:$rs3))]>;
+	[(set (i64 GRegs:$rd), (myCMOV GRegs:$rs1, GRegs:$rs2, GRegs:$rs3))]>;
 
 
 //
@@ -335,24 +335,25 @@ def MEMrr : Operand<iPTR> {
 //
 // Load
 //
-multiclass Load<string OpName, bits<6>OpCri, bits<6>OpCrr, SDPatternOperator OpNode> {
+multiclass Load<string OpName, bits<6>OpCri, bits<6>OpCrr,
+		ValueType VT, SDPatternOperator OpNode> {
   def ri : LDST_BD<OpCri,
 	(outs GRegs:$rd), (ins MEMri:$addr),
 	!strconcat(OpName, "\t$rd,[$addr]"),
-	[(set GRegs:$rd, (OpNode ADDRri:$addr))]>;
+	[(set (VT GRegs:$rd), (OpNode ADDRri:$addr))]>;
   def rr : LDST_RX<OpCrr, 0b00000,
 	(outs GRegs:$rd), (ins MEMrr:$addr),
 	!strconcat(OpName, "\t$rd,[$addr]"),
-	[(set GRegs:$rd, (OpNode ADDRrr:$addr))]>;
+	[(set (VT GRegs:$rd), (OpNode ADDRrr:$addr))]>;
 }
 let mayLoad = 1 in {
-  defm LDD  : Load<"ldd",  0b100011, 0b000011, load>;
-  defm LDUW : Load<"lduw", 0b100010, 0b000010, zextloadi32>;
-  defm LDUH : Load<"lduh", 0b100001, 0b000001, zextloadi16>;
-  defm LDUB : Load<"ldub", 0b100000, 0b000000, zextloadi8>;
-  defm LDSW : Load<"ldsw", 0b100110, 0b000110, sextloadi32>;
-  defm LDSH : Load<"ldsh", 0b100101, 0b000101, sextloadi16>;
-  defm LDSB : Load<"ldsb", 0b100100, 0b000100, sextloadi8>;
+  defm LDD  : Load<"ldd",  0b100011, 0b000011, i64, load>;
+  defm LDUW : Load<"lduw", 0b100010, 0b000010, i64, zextloadi32>;
+  defm LDUH : Load<"lduh", 0b100001, 0b000001, i64, zextloadi16>;
+  defm LDUB : Load<"ldub", 0b100000, 0b000000, i64, zextloadi8>;
+  defm LDSW : Load<"ldsw", 0b100110, 0b000110, i64, sextloadi32>;
+  defm LDSH : Load<"ldsh", 0b100101, 0b000101, i64, sextloadi16>;
+  defm LDSB : Load<"ldsb", 0b100100, 0b000100, i64, sextloadi8>;
 }
 // Map integer extload's to zextloads.
 def : Pat<(i64 (extloadi32 ADDRrr:$src)), (LDUWrr ADDRrr:$src)>;
@@ -392,22 +393,24 @@ def LAgxs: LDST_RX<0b000111, 0b00000,
 //
 // Store
 //
-multiclass Store<string OpName, bits<6>OpCri, bits<6>OpCrr, SDPatternOperator OpNode> {
+multiclass Store<string OpName, bits<6>OpCri, bits<6>OpCrr,
+		 ValueType VT, SDPatternOperator OpNode> {
   def ri : LDST_BD<OpCri,
 	(outs), (ins GRegs:$rd, MEMri:$addr),
 	!strconcat(OpName, "\t$rd,[$addr]"),
-	[(OpNode GRegs:$rd, ADDRri:$addr)]>;
+	[(OpNode (VT GRegs:$rd), ADDRri:$addr)]>;
   def rr : LDST_RX<OpCrr, 0b00000,
 	(outs), (ins GRegs:$rd, MEMrr:$addr),
 	!strconcat(OpName, "\t$rd,[$addr]"),
-	[(OpNode GRegs:$rd, ADDRrr:$addr)]>;
+	[(OpNode (VT GRegs:$rd), ADDRrr:$addr)]>;
 }
 let mayStore = 1 in {
-  defm STD : Store<"std", 0b101011, 0b001011, store>;
-  defm STW : Store<"stw", 0b101010, 0b001010, truncstorei32>;
-  defm STH : Store<"sth", 0b101001, 0b001001, truncstorei16>;
-  defm STB : Store<"stb", 0b101000, 0b001000, truncstorei8>;
+  defm STD : Store<"std", 0b101011, 0b001011, i64, store>;
+  defm STW : Store<"stw", 0b101010, 0b001010, i64, truncstorei32>;
+  defm STH : Store<"sth", 0b101001, 0b001001, i64, truncstorei16>;
+  defm STB : Store<"stb", 0b101000, 0b001000, i64, truncstorei8>;
 }
+
 
 // Because ADDRrr rejects anything ADDRri can handle, we need a pattern for both.
 multiclass StImm<string OpName, bits<6>Op, SDPatternOperator OpNode> {
@@ -427,6 +430,10 @@ let mayStore = 1 in {
   defm STB : StImm<"stb", 0b011011, truncstorei8>;
 }
 
+//
+// Floating point
+//
+include "My66000InstrInfoFP.td"
 
 //
 // Flow control
@@ -456,7 +463,7 @@ def BRC : BC<0b011010,
 	(outs), (ins brtarget:$adr, GRegs:$rs1, ccode:$cc),
 	"brc\t$cc,$rs1,$adr",
 	[(myBRcond bb:$adr, GRegs:$rs1, imm:$cc)]>;
-def BRB : BB<0b01100,
+def BRIB : BB<0b01100,
 	(outs), (ins brtarget:$adr, GRegs:$rs1, i64imm:$cb),
 	"brb1\t$cb,$rs1,$adr",
 	[(myBRcc bb:$adr, GRegs:$rs1, shfamt:$cb)]>;

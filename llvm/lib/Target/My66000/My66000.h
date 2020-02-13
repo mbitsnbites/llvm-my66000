@@ -45,6 +45,7 @@ namespace llvm {
     enum CondBits {
 	NE=0, EQ,
 	GT=2, GE, LT, LE,	// signed
+	OR=8, UN,		// ordered, unordered
 	HI=10, HS, LO, LS,	// unsigned
 	SIN=16, FIN, CIN, RIN,	// range
 	NM=34, N, Z, P, SM, UM,	// number line

@@ -15,12 +15,12 @@ def RetCC_My66000 : CallingConv<[
   // Promote i8/i16/i32 arguments to i32.
   CCIfType<[i8, i16, i32], CCPromoteToType<i64>>,
 
-  // i64 are returned in registers R1-R8
-  CCIfType<[i64], CCAssignToReg<[R1, R2, R3, R4, R5, R6, R7, R8]>>,
+  // i64,f64 are returned in registers R1-R8
+  CCIfType<[i64,f64], CCAssignToReg<[R1, R2, R3, R4, R5, R6, R7, R8]>>,
 
   // Integer values get stored in stack slots that are 8 bytes in
   // size and 8-byte aligned.
-  CCIfType<[i64], CCAssignToStack<8, 8>>
+  CCIfType<[i64,f64], CCAssignToStack<8, 8>>
 ]>;
 
 //===----------------------------------------------------------------------===//
@@ -34,11 +34,11 @@ def CC_My66000 : CallingConv<[
   CCIfType<[i8, i16, i32], CCPromoteToType<i64>>,
 
   // Arguments passed registers R1-R8
-  CCIfType<[i64], CCAssignToReg<[R1, R2, R3, R4, R5, R6, R7, R8]>>,
+  CCIfType<[i64,f64], CCAssignToReg<[R1, R2, R3, R4, R5, R6, R7, R8]>>,
 
   // Integer values get stored in stack slots that are 8 bytes in
   // size and 8-byte aligned.
-  CCIfType<[i64], CCAssignToStack<8, 8>>
+  CCIfType<[i64,f64], CCAssignToStack<8, 8>>
 ]>;
 
 def CSR_ABI : CalleeSavedRegs<(add R0, (sequence "R%u", 16, 30))>;
