@@ -411,6 +411,17 @@ let mayStore = 1 in {
   defm STB : Store<"stb", 0b101000, 0b001000, i64, truncstorei8>;
 }
 
+//
+// EXPERIMENTAL LDM/STM!!!
+//
+def LDM : LDST_BD<0b100111,
+	(outs GRegs:$rd), (ins MEMri:$addr),
+	"ldm\t$rd,[$addr]",
+	[]>;
+def STM : LDST_BD<0b101100,
+	(outs), (ins GRegs:$rd, MEMri:$addr),
+	"stm\t$rd,[$addr]",
+	[]>;
 
 // Because ADDRrr rejects anything ADDRri can handle, we need a pattern for both.
 multiclass StImm<string OpName, bits<6>Op, SDPatternOperator OpNode> {

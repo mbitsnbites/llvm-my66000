@@ -72,6 +72,7 @@ class My66000TargetLowering : public TargetLowering {
   SDValue LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerJumpTable(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerVASTART(SDValue Op, SelectionDAG &DAG) const;
 
   SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const override;
 

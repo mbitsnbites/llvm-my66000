@@ -51,9 +51,7 @@ def SP	: My66000Reg<31, "sp" >,  DwarfRegNum<[31]>;
 // Must list all the registers in the class.
 def GRegs : RegisterClass<"My66000", [i64,f64], 64,
   (add
-    (sequence "R%u", 16, 29),
-    (sequence "R%u",  1, 15),
-    R30,		// may be used as frame pointer
+    (sequence "R%u",  1, 30),
     SP,			// ABI stack pointer
     R0			// hardware link register
   )>;

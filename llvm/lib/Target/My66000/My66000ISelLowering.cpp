@@ -155,6 +155,7 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   // Other expansions
   setOperationAction(ISD::STACKSAVE, MVT::Other, Expand);
   setOperationAction(ISD::STACKRESTORE, MVT::Other, Expand);
+  setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i64, Expand);
 
   // Floating point
   setOperationAction(ISD::ConstantFP, MVT::f64, Legal);
@@ -517,6 +518,11 @@ struct ArgDataPair {
 
 } // end anonymous namespace
 
+static const MCPhysReg ArgRegs[] = {
+  My66000::R16, My66000::R17, My66000::R18, My66000::R19,
+  My66000::R20, My66000::R21, My66000::R22, My66000::R23
+};
+
 /// Transform physical registers into virtual registers, and generate load
 /// operations for argument places on the stack.
 SDValue My66000TargetLowering::LowerFormalArguments(
@@ -558,8 +564,7 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerFormalArguments\n");
     CCValAssign &VA = ArgLocs[i];
     SDValue ArgIn;
 
-    if (VA.isRegLoc()) {
-      // Arguments passed in registers
+    if (VA.isRegLoc()) {      // Arguments passed in registers
       EVT RegVT = VA.getLocVT();
       switch (RegVT.getSimpleVT().SimpleTy) {
       default: {
@@ -574,9 +579,8 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerFormalArguments\n");
         ArgIn = DAG.getCopyFromReg(Chain, dl, VReg, RegVT);
         CFRegNode.push_back(ArgIn.getValue(ArgIn->getNumValues() - 1));
       }
-    } else {
-      // sanity check
-      assert(VA.isMemLoc());
+    } else {      		// Arguments passed in memory
+      assert(VA.isMemLoc());      // sanity check
       // Load the argument to a virtual register
       unsigned ObjSize = VA.getLocVT().getStoreSize();
       assert((ObjSize <= StackSlotSize) && "Unhandled argument");
@@ -594,39 +598,38 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerFormalArguments\n");
     ArgData.push_back(ADP);
   }
 
-  // 1b. CopyFromReg vararg registers.
+  // CopyFromReg vararg registers.
   if (IsVarArg) {
     // Argument registers
-    static const MCPhysReg ArgRegs[] =
-    {My66000::R4, My66000::R5, My66000::R6, My66000::R7,
-     My66000::R8, My66000::R9, My66000::R10, My66000::R11};
-    auto *AFI = MF.getInfo<My66000FunctionInfo>();
+    auto *XFI = MF.getInfo<My66000FunctionInfo>();
     unsigned FirstVAReg = CCInfo.getFirstUnallocated(ArgRegs);
     if (FirstVAReg < array_lengthof(ArgRegs)) {
-      int Offset = 0;
       // Save remaining registers, storing higher register numbers at a higher
       // address
       // There are (array_lengthof(ArgRegs) - FirstVAReg) registers which
       // need to be saved.
-      int VarFI =
-          MFI.CreateFixedObject((array_lengthof(ArgRegs) - FirstVAReg) * 4,
-                                CCInfo.getNextStackOffset(), true);
-      AFI->setVarArgsFrameIndex(VarFI);
-      SDValue FIN = DAG.getFrameIndex(VarFI, MVT::i64);
+      int VaSaveSize = (array_lengthof(ArgRegs) - FirstVAReg) * 8;
+      int Offset = -VaSaveSize;
+    // Record the frame index of the first variable argument
+    // which is a value necessary to VASTART.
+      int VaFI = MFI.CreateFixedObject(8, Offset, true);
+      XFI->setVarArgsFrameIndex(VaFI);
       for (unsigned i = FirstVAReg; i < array_lengthof(ArgRegs); i++) {
         // Move argument from phys reg -> virt reg
         unsigned VReg = RegInfo.createVirtualRegister(&My66000::GRegsRegClass);
         RegInfo.addLiveIn(ArgRegs[i], VReg);
         SDValue Val = DAG.getCopyFromReg(Chain, dl, VReg, MVT::i64);
-        CFRegNode.push_back(Val.getValue(Val->getNumValues() - 1));
-        SDValue VAObj = DAG.getNode(ISD::ADD, dl, MVT::i64, FIN,
-                                    DAG.getConstant(Offset, dl, MVT::i64));
+	VaFI = MFI.CreateFixedObject(8, Offset, true);
+	SDValue PtrOff = DAG.getFrameIndex(VaFI, MVT::i64);
         // Move argument from virt reg -> stack
         SDValue Store =
-            DAG.getStore(Val.getValue(1), dl, Val, VAObj, MachinePointerInfo());
+            DAG.getStore(Chain, dl, Val, PtrOff, MachinePointerInfo());
+        cast<StoreSDNode>(Store.getNode())->getMemOperand()
+	    ->setValue((Value *)nullptr);
         MemOps.push_back(Store);
-        Offset += 4;
+        Offset += 8;
       }
+      XFI->setVarArgsSaveSize(VaSaveSize);
     } else {
       llvm_unreachable("Too many var args parameters.");
     }
@@ -657,11 +660,10 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerFormalArguments\n");
   }
 
   // 4. Chain mem ops nodes into a TokenFactor.
-//  if (!MemOps.empty()) {
-//    MemOps.push_back(Chain);
-//    Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, MemOps);
-//  }
-
+  if (!MemOps.empty()) {
+    MemOps.push_back(Chain);
+    Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, MemOps);
+  }
   return Chain;
 }
 
@@ -838,6 +840,21 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerJumpTable\n");
   return DAG.getNode(My66000ISD::WRAPPER, DL, MVT::i64, Result);
 }
 
+SDValue My66000TargetLowering::LowerVASTART(SDValue Op,
+                                              SelectionDAG &DAG) const {
+LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerVASTART\n");
+  MachineFunction &MF = DAG.getMachineFunction();
+  auto *XFI = MF.getInfo<My66000FunctionInfo>();
+  SDLoc DL(Op);
+  SDValue FI = DAG.getFrameIndex(XFI->getVarArgsFrameIndex(),
+                                 getPointerTy(MF.getDataLayout()));
+
+  // vastart just stores the address of the VarArgsFrameIndex slot into the
+  // memory location argument.
+  const Value *SV = cast<SrcValueSDNode>(Op.getOperand(2))->getValue();
+  return DAG.getStore(Op.getOperand(0), DL, FI, Op.getOperand(1),
+                      MachinePointerInfo(SV));
+}
 
 SDValue My66000TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
 LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerOperation\n");
@@ -848,6 +865,7 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerOperation\n");
   case ISD::SIGN_EXTEND_INREG:		return LowerSIGN_EXTEND_INREG(Op, DAG);
   case ISD::GlobalAddress:		return LowerGlobalAddress(Op, DAG);
   case ISD::JumpTable:			return LowerJumpTable(Op, DAG);
+  case ISD::VASTART:			return LowerVASTART(Op, DAG);
   default:
     llvm_unreachable("unimplemented operand");
   }
