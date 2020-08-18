@@ -89,6 +89,8 @@ def FMOVrd : ALU_RRR<0b000, 0b111,
 	{ let rs1 = 0b00000; let rs2 = 0b00000; let rs3 = 0b00000; }
 def : Pat<(myCMOV (f64 GRegs:$rs1), (f64 GRegs:$rs2), GRegs:$rs3),
           (CMOVrrr GRegs:$rs1, GRegs:$rs2, GRegs:$rs3)>;
+def : Pat<(myMUX (f64 GRegs:$rs1), (f64 GRegs:$rs2), GRegs:$rs3),
+          (MUXrrr GRegs:$rs1, GRegs:$rs2, GRegs:$rs3)>;
 
 // Converts
 def CVTud : CVT<0b010000, 0b00000,
@@ -108,6 +110,12 @@ def CVTds : CVT<0b100000, 0b00000,
 	"cvtds\t$rd,$rs1",
 	[(set (i64 GRegs:$rd), (fp_to_sint (f64 GRegs:$rs1)))]>;
 
+// Transcendentals
+def SQRT : TRAN<0b001101, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fsqrt\t$rd,$rs1",
+	[(set (f64 GRegs:$rd), (fsqrt (f64 GRegs:$rs1)))]>;
+
 // These bitcasts are NOPs
 def       : Pat<(bitconvert (f64 GRegs:$rs)),
 		(i64 GRegs:$rs)>;
@@ -123,10 +131,3 @@ let mayStore = 1 in {
   defm STG : Store<"std", 0b101011, 0b001011, f64, store>;
 }
 
-// Branch on bit after floating compare
-let isBranch = 1, isTerminator = 1 in {
-def BRFB : BB<0b01100,
-	(outs), (ins brtarget:$adr, GRegs:$rs1, i64imm:$cb),
-	"brb1\t$cb,$rs1,$adr",
-	[(myBRfcc bb:$adr, GRegs:$rs1, shfamt:$cb)]>;
-}

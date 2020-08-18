@@ -73,9 +73,9 @@ public:
   }
 
   void addIRPasses() override;
-
   bool addInstSelector() override;
-//  void addPreEmitPass() override;
+  void addMachineLateOptimization() override;
+
 };
 
 } // end anonymous namespace
@@ -90,19 +90,15 @@ void My66000PassConfig::addIRPasses() {
   TargetPassConfig::addIRPasses();
 }
 
-
-
-
-
-
 bool My66000PassConfig::addInstSelector() {
   addPass(createMy66000ISelDag(getMy66000TargetMachine(), getOptLevel()));
+  addPass(createMy66000FixJumpTablePass());
   return false;
 }
 
-//void My66000PassConfig::addPreEmitPass() {
-//  addPass(createMy66000FrameToArgsOffsetEliminationPass(), false);
-//}
+void My66000PassConfig::addMachineLateOptimization() {
+  addPass(createMy66000PredBlockPass());
+}
 
 // Force static initialization.
 extern "C" void LLVMInitializeMy66000Target() {

@@ -40,6 +40,9 @@ using namespace llvm;
 #define GET_REGINFO_TARGET_DESC
 #include "My66000GenRegisterInfo.inc"
 
+static const unsigned FPReg = My66000::R1;
+static const unsigned SPReg = My66000::SP;
+
 My66000RegisterInfo::My66000RegisterInfo()
   : My66000GenRegisterInfo(My66000::R0) {
 }
@@ -60,10 +63,10 @@ BitVector My66000RegisterInfo::getReservedRegs(const MachineFunction &MF) const 
   BitVector Reserved(getNumRegs());
   const My66000FrameLowering *TFI = getFrameLowering(MF);
 
-  Reserved.set(My66000::SP);
+  Reserved.set(SPReg);
   Reserved.set(My66000::R0);
   if (TFI->hasFP(MF)) {
-    Reserved.set(My66000::R30);
+    Reserved.set(FPReg);
   }
   return Reserved;
 }
@@ -125,7 +128,7 @@ LLVM_DEBUG(dbgs() << "My66000RegisterInfo::eliminateFrameIndex\n");
 Register My66000RegisterInfo::getFrameRegister(const MachineFunction &MF) const {
   const My66000FrameLowering *TFI = getFrameLowering(MF);
 
-  return TFI->hasFP(MF) ? My66000::R30 : My66000::SP;
+  return TFI->hasFP(MF) ? FPReg : SPReg;
 }
 
 const uint32_t *

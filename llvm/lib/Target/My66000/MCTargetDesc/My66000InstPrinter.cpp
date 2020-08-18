@@ -20,6 +20,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Debug.h"
 #include <cassert>
 
 using namespace llvm;
@@ -108,6 +109,39 @@ void My66000InstPrinter::printRegName(raw_ostream &OS, unsigned RegNo) const {
   OS << StringRef(getRegisterName(RegNo)).lower();
 }
 
+static void printCarryBits(unsigned bits, raw_ostream &O) {
+
+    O << '{';
+    while (bits != 0) {
+      switch (bits & 3) {
+        case 0:
+	  O << '-';
+	  break;
+	case 1:
+	  O << 'I';
+	  break;
+	case 2:
+	  O << 'O';
+	  break;
+	case 3:
+	  O << "IO";
+	  break;
+	}
+	bits >>= 2;
+	if (bits != 0) O << ',';
+    };
+    O << '}';
+}
+
+static void printShadow(raw_ostream &OS, unsigned imm12) {
+  unsigned cnt = (imm12 >> 8) & 7;
+  OS << "0,";	// FIXME - perhaps unused field in predication instrs
+  for (unsigned i=0; i <= cnt; i++) {
+    OS << (((imm12&1) == 0) ? 'F' : 'T');
+    imm12 >>= 1;
+  }
+}
+
 void My66000InstPrinter::printInst(const MCInst *MI, raw_ostream &O,
                                  StringRef Annot, const MCSubtargetInfo &STI) {
   switch (MI->getOpcode()) {
@@ -135,12 +169,66 @@ void My66000InstPrinter::printInst(const MCInst *MI, raw_ostream &O,
     printOperand(MI, 0, O);
     }
     break;
+  case My66000::CARRYo: {
+    O << "\tcarry\t";
+    printOperand(MI, 0, O);
+    O << ",";
+    const MCOperand &Opc = MI->getOperand(1);
+    printCarryBits(Opc.getImm(), O);
+    }
+    break;
+  case My66000::CARRYio: {
+    O << "\tcarry\t";
+    printOperand(MI, 0, O);
+    O << ",";
+    const MCOperand &Opc = MI->getOperand(2);
+    printCarryBits(Opc.getImm(), O);
+    }
+    break;
+  case My66000::PRC: {
+    const MCOperand &Opcc = MI->getOperand(0);
+    O << "\tp" << CondCodeString(Opcc.getImm()) << "\t";
+    printOperand(MI, 1, O);
+    O << ",";
+    printShadow(O, MI->getOperand(2).getImm());
+    }
+    break;
+  case My66000::PRIB: {
+    const MCOperand &Opcc = MI->getOperand(0);
+    O << "\tp" << CondBitString(Opcc.getImm()) << "\t";
+    printOperand(MI, 1, O);
+    O << ",";
+    printShadow(O, MI->getOperand(2).getImm());
+    }
+    break;
+  case My66000::PRFB: {
+    const MCOperand &Opcc = MI->getOperand(0);
+    O << "\tp" << FCondBitString(Opcc.getImm()) << "\t";
+    printOperand(MI, 1, O);
+    O << ",";
+    printShadow(O, MI->getOperand(2).getImm());
+    }
+    break;
   default:
     printInstruction(MI, O);
   }
   printAnnotation(O, Annot);
 }
 
+void My66000InstPrinter::
+printInlineJT8(const MCInst *MI, unsigned opNum, raw_ostream &O) {
+  report_fatal_error("can't handle InlineJT8");
+}
+
+void My66000InstPrinter::
+printInlineJT16(const MCInst *MI, unsigned opNum, raw_ostream &O) {
+  report_fatal_error("can't handle InlineJT16");
+}
+
+void My66000InstPrinter::
+printInlineJT32(const MCInst *MI, unsigned opNum, raw_ostream &O) {
+  report_fatal_error("can't handle InlineJT32");
+}
 
 static void printExpr(const MCExpr *Expr, const MCAsmInfo *MAI,
                       raw_ostream &OS) {
@@ -186,6 +274,24 @@ printOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O) {
   printExpr(Op.getExpr(), &MAI, O);
 }
 
+void My66000InstPrinter::printS16ImmOperand(const MCInst *MI, unsigned OpNo,
+                                        raw_ostream &O) {
+//dbgs() << "My66000InstPrinter::printS16ImmOperand\n";
+  if (MI->getOperand(OpNo).isImm())
+    O << (int16_t)MI->getOperand(OpNo).getImm();
+  else
+    printOperand(MI, OpNo, O);
+}
+
+void My66000InstPrinter::printS32ImmOperand(const MCInst *MI, unsigned OpNo,
+                                        raw_ostream &O) {
+//dbgs() << "My66000InstPrinter::printS16ImmOperand\n";
+  if (MI->getOperand(OpNo).isImm())
+    O << (int32_t)MI->getOperand(OpNo).getImm();
+  else
+    printOperand(MI, OpNo, O);
+}
+
 void My66000InstPrinter::printFP64Operand(const MCInst *MI, int opNum,
 					raw_ostream &O) {
   union {
@@ -229,4 +335,3 @@ void My66000InstPrinter::printMEMrrOperand(const MCInst *MI, int opNum,
   O << ",";
   printOperand(MI, opNum+3, O);	// offset
 }
-

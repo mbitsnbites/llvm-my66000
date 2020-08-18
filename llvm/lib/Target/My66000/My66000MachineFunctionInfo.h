@@ -29,18 +29,15 @@ namespace llvm {
 /// My66000FunctionInfo - This class is derived from MachineFunction private
 /// My66000 target-specific information for each MachineFunction.
 class My66000FunctionInfo : public MachineFunctionInfo {
-  bool LRSpillSlotSet = false;
-  int LRSpillSlot;
-  bool FPSpillSlotSet = false;
-  int FPSpillSlot;
-  bool EHSpillSlotSet = false;
-  int EHSpillSlot[2];
   unsigned ReturnStackOffset;
   bool ReturnStackOffsetSet = false;
   int VarArgsFrameIndex = 0;
+  int VarArgsSaveSize = 0;
   mutable int CachedEStackSize = -1;
   std::vector<std::pair<MachineBasicBlock::iterator, CalleeSavedInfo>>
   SpillLabels;
+  unsigned LoSavedReg;
+  unsigned HiSavedReg;
 
   virtual void anchor();
 
@@ -54,26 +51,8 @@ public:
   void setVarArgsFrameIndex(int off) { VarArgsFrameIndex = off; }
   int getVarArgsFrameIndex() const { return VarArgsFrameIndex; }
 
-  int createLRSpillSlot(MachineFunction &MF);
-  bool hasLRSpillSlot() { return LRSpillSlotSet; }
-  int getLRSpillSlot() const {
-    assert(LRSpillSlotSet && "LR Spill slot not set");
-    return LRSpillSlot;
-  }
-
-  int createFPSpillSlot(MachineFunction &MF);
-  bool hasFPSpillSlot() { return FPSpillSlotSet; }
-  int getFPSpillSlot() const {
-    assert(FPSpillSlotSet && "FP Spill slot not set");
-    return FPSpillSlot;
-  }
-
-  const int* createEHSpillSlot(MachineFunction &MF);
-  bool hasEHSpillSlot() { return EHSpillSlotSet; }
-  const int* getEHSpillSlot() const {
-    assert(EHSpillSlotSet && "EH Spill slot not set");
-    return EHSpillSlot;
-  }
+  unsigned getVarArgsSaveSize() const { return VarArgsSaveSize; }
+  void setVarArgsSaveSize(int Size) { VarArgsSaveSize = Size; }
 
   void setReturnStackOffset(unsigned value) {
     assert(!ReturnStackOffsetSet && "Return stack offset set twice");
@@ -86,12 +65,20 @@ public:
     return ReturnStackOffset;
   }
 
-  bool isLargeFrame(const MachineFunction &MF) const;
-
   std::vector<std::pair<MachineBasicBlock::iterator, CalleeSavedInfo>> &
   getSpillLabels() {
     return SpillLabels;
   }
+
+  // Get and set the first call-saved GPR that should be saved and restored
+  // by this function.  This is 0 if no GPRs need to be saved or restored.
+  unsigned getLoSavedReg() const { return LoSavedReg; }
+  void setLoSavedReg(unsigned Reg) { LoSavedReg = Reg; }
+
+  // Get and set the last call-saved GPR that should be saved and restored
+  // by this function.
+  unsigned getHiSavedReg() const { return HiSavedReg; }
+  void setHiSavedReg(unsigned Reg) { HiSavedReg = Reg; }
 };
 
 } // end namespace llvm

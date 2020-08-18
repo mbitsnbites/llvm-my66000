@@ -127,6 +127,23 @@ class ALU_RRR<bits<3> minor, bits<3> flags, dag outs, dag ins, string asmstr,
   let Size = 4;
 }
 
+class ALU_RRM<bits<3> minor, bits<3> flags, dag outs, dag ins, string asmstr,
+                  list<dag> pattern>
+    : My66000Inst<outs, ins, asmstr, pattern> {
+  bits<5> rd;		// dst register
+  bits<5> rs1;		// src1 register
+  bits<5> rs2;		// src2 register
+  bits<5> rs3;		// src3 register
+  let Opcode = 0b001001;
+  let Inst{25-21} = rd;
+  let Inst{20-16} = rs1;
+  let Inst{15-13} = flags;
+  let Inst{12-10} = minor;
+  let Inst{9-5}   = rs3;
+  let Inst{4-0}   = rs2;
+  let Size = 4;
+}
+
 class ALU_RI<bits<6> major, dag outs, dag ins, string asmstr, list<dag> pattern>
     : My66000Inst<outs, ins, asmstr, pattern> {
   bits<5> rd;		// dst register
@@ -211,6 +228,32 @@ class BB<bits<5> major, dag outs, dag ins, string asmstr,
   let Inst{15-0}  = imm;
 }
 
+class PC<bits<6> major, dag outs, dag ins, string asmstr,
+                  list<dag> pattern>
+    : My66000Inst<outs, ins, asmstr, pattern> {
+  bits<5> rs1;	// src1 register
+  bits<5> cc;	// condition code
+  bits<12> imm;	// 12-bit immediate
+  let Opcode = major;
+  let Inst{25-21} = cc;
+  let Inst{20-16} = rs1;
+  let Inst{15-12} = 0b0001;	// minor
+  let Inst{11-0}  = imm;
+}
+
+class PB<bits<5> major, dag outs, dag ins, string asmstr,
+                  list<dag> pattern>
+    : My66000Inst<outs, ins, asmstr, pattern> {
+  bits<5> rs1;	// src1 register
+  bits<6> cb;	// condition bit
+  bits<12> imm;	// 12-bit immediate
+  let Inst{31-27} = major;
+  let Inst{26-21} = cb;
+  let Inst{20-16} = rs1;
+  let Inst{15-12} = 0b0000;	// minor
+  let Inst{11-0}  = imm;
+}
+
 class HR<bits<5> minor, bits<2> rw, dag outs, dag ins, string asmstr,
                   list<dag> pattern>
     : My66000Inst<outs, ins, asmstr, pattern> {
@@ -248,5 +291,18 @@ class CVT<bits<6> func, bits<5> flags, dag outs, dag ins, string asmstr,
   let Inst{20-16} = rs1;
   let Inst{15-11} = flags;
   let Inst{10-6}  = 0b01000;
+  let Inst{5-0}   = func;
+}
+
+class TRAN<bits<6> func, bits<5> flags, dag outs, dag ins, string asmstr,
+		  list<dag> pattern>
+    : My66000Inst<outs, ins, asmstr, pattern> {
+  bits<5> rd;		// dst register
+  bits<5> rs1;		// src1 register
+  let Opcode = 0b001101;
+  let Inst{25-21} = rd;
+  let Inst{20-16} = rs1;
+  let Inst{15-11} = flags;
+  let Inst{10-6}  = 0b11000;
   let Inst{5-0}   = func;
 }

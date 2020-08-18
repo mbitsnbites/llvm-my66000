@@ -30,6 +30,10 @@ namespace llvm {
   FunctionPass *createMy66000ISelDag(My66000TargetMachine &TM,
                                    CodeGenOpt::Level OptLevel);
   ModulePass *createMy66000LowerThreadLocalPass();
+  FunctionPass *createMy66000PredBlockPass();
+  void initializeMy66000PredBlockPass(PassRegistry &p);
+  FunctionPass *createMy66000FixJumpTablePass();
+  void initializeMy66000FixJumpTablePass(PassRegistry &p);
 
   // Condition Codes used with BRcond
   namespace MYCC {

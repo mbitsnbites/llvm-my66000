@@ -13,6 +13,7 @@
 #ifndef LLVM_LIB_TARGET_MY66000_MY66000INSTRINFO_H
 #define LLVM_LIB_TARGET_MY66000_MY66000INSTRINFO_H
 
+#include "My66000.h"
 #include "My66000RegisterInfo.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
 
@@ -55,6 +56,10 @@ public:
 
   unsigned removeBranch(MachineBasicBlock &MBB,
                         int *BytesRemoved = nullptr) const override;
+
+  unsigned reverseBRC(MYCC::CondCodes cc) const;
+
+  unsigned reverseBRIB(MYCB::CondBits cb) const;
 
   bool
   reverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const override;

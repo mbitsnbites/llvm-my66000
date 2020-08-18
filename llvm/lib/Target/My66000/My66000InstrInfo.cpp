@@ -11,7 +11,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "My66000InstrInfo.h"
-#include "My66000.h"
 #include "My66000MachineFunctionInfo.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -237,19 +236,19 @@ LLVM_DEBUG(dbgs() << "My66000InstrInfo::removeBranch\n");
     return 0;
   if (!IsBranch(I->getOpcode()))
     return 0;
-//dbgs() << "\tfirst " << I->getOpcode() << "\n";
+LLVM_DEBUG(dbgs() << "\tfirst " << I->getOpcode() << '\n');
   I->eraseFromParent();		// Remove the branch.
   I = MBB.end();
   if (I == MBB.begin()) return 1;
   --I;
   if (!IsCondBranch(I->getOpcode()))
     return 1;
-//dbgs() << "\tsecond " << I->getOpcode() << "\n";
+LLVM_DEBUG(dbgs() << "\tsecond " << I->getOpcode() << '\n');
   I->eraseFromParent();		// Remove the branch.
   return 2;
 }
 
-static unsigned reverseBRC(MYCC::CondCodes cc) {
+unsigned My66000InstrInfo::reverseBRC(MYCC::CondCodes cc) const {
   switch (cc) {
   default:
     llvm_unreachable("Unrecognized condition code");
@@ -262,7 +261,7 @@ static unsigned reverseBRC(MYCC::CondCodes cc) {
   }
 }
 
-static unsigned reverseBRB(MYCB::CondBits cb) {
+unsigned My66000InstrInfo::reverseBRIB(MYCB::CondBits cb) const {
   switch (cb) {
   default:
     llvm_unreachable("Unrecognized condition bit");
@@ -286,7 +285,7 @@ LLVM_DEBUG(dbgs() << "My66000InstrInfo::reverseBranchCondition\n");
   } else if (Cond[0].getImm() == My66000::BRIB) {
 //dbgs() << "\tBRB " << Cond[2].getImm() << "\n";
      MYCB::CondBits cb = static_cast<MYCB::CondBits>(Cond[2].getImm());
-     Cond[2].setImm(reverseBRB(cb));
+     Cond[2].setImm(reverseBRIB(cb));
      return false;
   }
   // BRFB not reversible

@@ -9,7 +9,7 @@
 include "My66000InstrFormats.td"
 
 //
-// Operand definitions
+// Operand definitions for DAG matching
 //
 def uimm16 : Operand<i64>, ImmLeaf<i64,
 		[{ return Imm >= 0 && Imm <= 65535; }]>;
@@ -20,9 +20,9 @@ def uneed32: Operand<i64>, ImmLeaf<i64,
 def uneed64: Operand<i64>, ImmLeaf<i64,
 		[{ return (uint64_t)(Imm) >= 4294967296; }]>;
 def simm16 : Operand<i64>, ImmLeaf<i64,
-		[{ return Imm >= -32768 && Imm <= 32767; }]>;
+		[{ return isInt<16>(Imm); }]>;
 def simm32 : Operand<i64>, ImmLeaf<i64,
-		[{ return Imm >= -2147483648 && Imm <= 2147483647; }]>;
+		[{ return (int64_t)Imm == (int32_t)Imm; }]>;
 def sneed32: Operand<i64>, ImmLeaf<i64,
 		[{ return (Imm >= -2147483648 && Imm <-32768) ||
 			  (Imm <=  2147483647 && Imm > 32767); }]>;
@@ -38,6 +38,15 @@ def brtarget : Operand<OtherVT>;
 def calltarget : Operand<OtherVT>;
 def ccode : Operand<i64>;
 
+// Operand definitions for machine instructions
+def s16imm64 : Operand<i64> {
+  let PrintMethod = "printS16ImmOperand";
+}
+def s32imm64 : Operand<i64> {
+  let PrintMethod = "printS32ImmOperand";
+}
+
+
 //
 // Type profiles
 //
@@ -48,6 +57,10 @@ def SDT_BRcc :		SDTypeProfile<0, 3, [SDTCisVT<0, OtherVT>,
 					     SDTCisVT<1, i64>,
 					     SDTCisVT<2, i64>]>;
 def SDT_CALL : 		SDTypeProfile<0, 1, [SDTCisPtrTy<0>]>;
+def SDT_BR_JT :		SDTypeProfile<0, 3, [SDTCisVT<0, i64>,
+					     SDTCisVT<1, i64>,
+					     SDTCisVT<2, i64>]>;
+
 //
 // My66000 specific DAG Nodes.
 //
@@ -66,6 +79,9 @@ def myBRcond :	    SDNode<"My66000ISD::BRcond", SDT_BRcond,
 			[SDNPHasChain]>;
 def myBRcc :	    SDNode<"My66000ISD::BRcc", SDT_BRcc,
 			[SDNPHasChain]>;
+def myJT8 :	    SDNode<"My66000ISD::JT8", SDT_BR_JT, [SDNPHasChain]>;
+def myJT16 :	    SDNode<"My66000ISD::JT16", SDT_BR_JT, [SDNPHasChain]>;
+def myJT32 :	    SDNode<"My66000ISD::JT32", SDT_BR_JT, [SDNPHasChain]>;
 def myCALL :        SDNode<"My66000ISD::CALL",
                         SDTypeProfile<0, -1, [SDTCisPtrTy<0>]>,
 			[SDNPHasChain, SDNPOptInGlue, SDNPOutGlue, SDNPVariadic]>;
@@ -77,7 +93,16 @@ def myEXT :	    SDNode<"My66000ISD::EXT",
 			[SDTCisVT<0, i64>,SDTCisVT<1, i64>,SDTCisVT<2, i64>,
 			 SDTCisVT<3, i64>]>,
 			[]>;
+def myEXTS :	    SDNode<"My66000ISD::EXTS",
+			SDTypeProfile<1, 3,
+			[SDTCisVT<0, i64>,SDTCisVT<1, i64>,SDTCisVT<2, i64>,
+			 SDTCisVT<3, i64>]>,
+			[]>;
 def myCMOV:	    SDNode<"My66000ISD::CMOV",
+			SDTypeProfile<1, 3,
+			  [SDTCisSameAs<0, 1>,SDTCisSameAs<0, 2>,SDTCisVT<3, i64>]>,
+			[]>;
+def myMUX:	    SDNode<"My66000ISD::MUX",
 			SDTypeProfile<1, 3,
 			  [SDTCisSameAs<0, 1>,SDTCisSameAs<0, 2>,SDTCisVT<3, i64>]>,
 			[]>;
@@ -85,6 +110,29 @@ def myWRAPPER:	    SDNode<"My66000ISD::WRAPPER",
 			SDTypeProfile<1, 1,
 			  [SDTCisSameAs<0, 1>,SDTCisPtrTy<0>]>,
 			[]>;
+def myMEMCPY:	    SDNode<"My66000ISD::MEMCPY",
+			SDTypeProfile<0, 3,
+			  [SDTCisVT<0, i64>,SDTCisVT<1, i64>,SDTCisVT<2, i64>]>,
+			[SDNPHasChain, SDNPMayStore, SDNPMayLoad]>;
+
+//
+// ALU RI
+//
+multiclass ALUri<string OpName, bits<6>OpC, SDPatternOperator OpNode> {
+  def ri : ALU_RI<OpC,
+	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm),
+	!strconcat(OpName, "\t$rd,$rs1,#$imm"),
+	[(set GRegs:$rd, (OpNode GRegs:$rs1, simm16:$imm))]>;
+}
+defm ADD : ALUri<"add", 0b110001, add>;
+defm MUL : ALUri<"mul", 0b110010, mul>;
+defm UDIV: ALUri<"div", 0b110011, udiv>;
+let isCompare = 1 in {
+defm CMP : ALUri<"cmp", 0b110100, myCMP>;
+}
+defm OR  : ALUri<"or",  0b111000, or>;
+defm XOR : ALUri<"xor", 0b111001, xor>;
+defm AND : ALUri<"and", 0b111010, and>;
 
 //
 // ALU RR
@@ -141,7 +189,7 @@ def NAND  : Pat<(not (and GRegs:$rs1, GRegs:$rs2)),
 def ABS   : Pat<(abs GRegs:$rs1),
 		(SMAXrn GRegs:$rs1, GRegs:$rs1)>;
 //
-// ALU RW
+// ALU RW - have 16-bit immediate versions
 //
 multiclass ALUrw<string OpName, bits<6>OpC, bits<5>Flags,
 		   SDPatternOperator OpNode> {
@@ -152,13 +200,34 @@ multiclass ALUrw<string OpName, bits<6>OpC, bits<5>Flags,
 }
 defm ADD  : ALUrw<"add",  0b100000, 0b10000, add>;
 defm MUL  : ALUrw<"mul",  0b100001, 0b10000, mul>;
-defm DIV  : ALUrw<"div",  0b100010, 0b10000, udiv>;
-defm OR   : ALUrw<"or",   0b101000, 0b10000, or>;
-defm XOR  : ALUrw<"xor",  0b101001, 0b10000, xor>;
-defm AND  : ALUrw<"and",  0b101010, 0b10000, and>;
+defm UDIV : ALUrw<"div",  0b100010, 0b10000, udiv>;
+defm SDIV : ALUrw<"div",  0b100010, 0b10010, sdiv>;
 let isCompare = 1 in {
 defm CMP  : ALUrw<"cmp",  0b100100, 0b10000, myCMP>;
 }
+defm OR   : ALUrw<"or",   0b101000, 0b10000, or>;
+defm XOR  : ALUrw<"xor",  0b101001, 0b10000, xor>;
+defm AND  : ALUrw<"and",  0b101010, 0b10000, and>;
+defm SLL  : ALUrw<"sll",  0b101101, 0b00000, shl>;
+defm SRL  : ALUrw<"srl",  0b101100, 0b00000, srl>;
+defm SRA  : ALUrw<"sra",  0b101100, 0b00010, sra>;
+
+//
+// ALU RX - don't have 16-bit immediate versions
+// Because they commute and have a version with 5-bit immediate
+// as the first operand, we generate the immediate that way.
+//
+multiclass ALUrx<string OpName, bits<6>OpC, bits<5>Flags,
+		   SDPatternOperator OpNode> {
+  def rx : ALU_RW<OpC, Flags,
+	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm),
+	!strconcat(OpName, "\t$rd,#$imm,$rs1"),
+	[(set GRegs:$rd, (OpNode GRegs:$rs1, simm32:$imm))]>;
+}
+defm UMAX : ALUrx<"max",  0b100110, 0b00000, umax>;
+defm UMIN : ALUrx<"min",  0b100111, 0b00000, umin>;
+defm SMAX : ALUrx<"maxs", 0b100110, 0b00010, smax>;
+defm SMIN : ALUrx<"mins", 0b100111, 0b00010, smin>;
 
 //
 // ALU RD
@@ -188,7 +257,7 @@ multiclass ALUwr<string OpName, bits<6>OpC, bits<5>Flags,
 	[(set GRegs:$rd, (OpNode simm32:$imm, GRegs:$rs2))]>;
 }
 // Only non-commutative operations need apply
-defm DIV  : ALUwr<"div",  0b100010, 0b10000, udiv>;
+defm UDIV : ALUwr<"div",  0b100010, 0b10000, udiv>;
 defm SLL  : ALUwr<"sll",  0b101101, 0b10000, shl>;
 defm SRL  : ALUwr<"srl",  0b101100, 0b00000, srl>;
 def SUBwr : ALU_RR<0b100000, 0b00100,
@@ -197,31 +266,12 @@ def SUBwr : ALU_RR<0b100000, 0b00100,
 	[(set GRegs:$rd, (sub simm32:$imm, GRegs:$rs2))]>;
 
 //
-// ALU RI
-//
-multiclass ALUri<string OpName, bits<6>OpC, SDPatternOperator OpNode> {
-  def ri : ALU_RI<OpC,
-	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm),
-	!strconcat(OpName, "\t$rd,$rs1,#$imm"),
-	[(set GRegs:$rd, (OpNode GRegs:$rs1, simm16:$imm))]>;
-}
-defm ADD : ALUri<"add", 0b110001, add>;
-defm MUL : ALUri<"mul", 0b110010, mul>;
-defm DIV : ALUri<"div", 0b110011, udiv>;
-let isCompare = 1 in {
-defm CMP : ALUri<"cmp", 0b110100, myCMP>;
-}
-defm OR  : ALUri<"or",  0b111000, or>;
-defm XOR : ALUri<"xor", 0b111001, xor>;
-defm AND : ALUri<"and", 0b111010, and>;
-
-//
 // MOVs
 //
 // Immediate 16-bit signed extended
 let isAsCheapAsAMove = 1 in {
 def MOVri : ALU_RI<0b111011,
-	(outs GRegs:$rd), (ins i64imm:$imm),
+	(outs GRegs:$rd), (ins s16imm64:$imm),
 	"mov\t$rd,#$imm",
 	[(set GRegs:$rd, simm16:$imm)]>
 	{ let rs1 = 0b00000; }
@@ -229,7 +279,7 @@ def MOVri : ALU_RI<0b111011,
 
 // Immediate 32-bit signed extended
 def MOVrw : ALU_RRR<0b000, 0b101,
-	(outs GRegs:$rd), (ins i64imm:$imm),
+	(outs GRegs:$rd), (ins s32imm64:$imm),
 	"mov\t$rd,#$imm",
 	[(set GRegs:$rd, simm32:$imm)]>
 	{ let rs1 = 0b00000; let rs2 = 0b00000; let rs3 = 0b00000; }
@@ -238,7 +288,7 @@ def MOVrw : ALU_RRR<0b000, 0b101,
 def MOVrd : ALU_RRR<0b000, 0b111,
 	(outs GRegs:$rd), (ins i64imm:$imm),
 	"mov\t$rd,#$imm",
-	[(set GRegs:$rd, uneed64:$imm)]>
+	[(set GRegs:$rd, sneed64:$imm)]>
 	{ let rs1 = 0b00000; let rs2 = 0b00000; let rs3 = 0b00000; }
 
 // Reg to Reg never matches, just built to copyPhysReg
@@ -253,6 +303,18 @@ def CMOVrrr : ALU_RRR<0b000, 0b001,
 	"cmov\t$rd,$rs3,$rs1,$rs2",
 	[(set (i64 GRegs:$rd), (myCMOV GRegs:$rs1, GRegs:$rs2, GRegs:$rs3))]>;
 
+def MUXrrr :  ALU_RRR<0b000, 0b000,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2, GRegs:$rs3),
+	"mux\t$rd,$rs3,$rs1,$rs2",
+	[(set (i64 GRegs:$rd), (myMUX GRegs:$rs1, GRegs:$rs2, GRegs:$rs3))]>;
+def MUXrrw :  ALU_RRR<0b000, 0b100,
+	(outs GRegs:$rd), (ins GRegs:$rs1, s32imm64:$imm, GRegs:$rs3),
+	"mux\t$rd,$rs3,$rs1,#$imm",
+	[(set (i64 GRegs:$rd), (myMUX GRegs:$rs1, simm32:$imm, GRegs:$rs3))]>;
+def MUXrrd :  ALU_RRR<0b000, 0b110,
+	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm, GRegs:$rs3),
+	"mux\t$rd,$rs3,$rs1,#$imm",
+	[(set (i64 GRegs:$rd), (myMUX GRegs:$rs1, sneed64:$imm, GRegs:$rs3))]>;
 
 //
 // Shifts with immediate counts
@@ -279,6 +341,8 @@ def : Pat<(sra GRegs:$rs1, shfamt:$imm),
 	  (SRAri GRegs:$rs1, 0, shfamt:$imm)>;
 def : Pat<(myEXT GRegs:$rs1, shfamt:$imm1, shfamt:$imm2),
 	  (SRLri GRegs:$rs1, shfamt:$imm1, shfamt:$imm2)>;
+def : Pat<(myEXTS GRegs:$rs1, shfamt:$imm1, shfamt:$imm2),
+	  (SRAri GRegs:$rs1, shfamt:$imm1, shfamt:$imm2)>;
 
 // Generated by DAGToDAG
 def INSrrw : ALU_RRR<0b010, 0b100,
@@ -411,6 +475,31 @@ let mayStore = 1 in {
   defm STB : Store<"stb", 0b101000, 0b001000, i64, truncstorei8>;
 }
 
+//
+// EXPERIMENTAL LDM/STM!!!
+//
+def LDM : LDST_BD<0b100111,
+	(outs GRegs:$rd), (ins MEMri:$addr),
+	"ldm\t$rd,[$addr]",
+	[]>;
+def STM : LDST_BD<0b101100,
+	(outs), (ins GRegs:$rd, MEMri:$addr),
+	"stm\t$rd,[$addr]",
+	[]>;
+
+// ENTER/EXIT
+let mayStore = 1 in {
+def ENTER : ALU_RI<0b101100,
+	(outs), (ins GRegs:$rd, GRegs:$rb, i16imm:$f, i16imm:$imm),
+	"enter\t$rd,$rb,$f,$imm",
+	[]>;
+}
+let mayLoad = 1 in {
+def EXIT : ALU_RI<0b101100,
+	(outs), (ins GRegs:$rd, GRegs:$rb, i16imm:$f, i16imm:$imm),
+	"exit\t$rd,$rb,$f,$imm",
+	[]>;
+}
 
 // Because ADDRrr rejects anything ADDRri can handle, we need a pattern for both.
 multiclass StImm<string OpName, bits<6>Op, SDPatternOperator OpNode> {
@@ -451,11 +540,38 @@ def BRU : BR<0b011110,
 	"br\t$adr",
 	[(br bb:$adr)]>;
 }
+
+// Jump tables.
+def InlineJT8 : Operand<i64> {
+  let PrintMethod = "printInlineJT8";
+}
+def InlineJT16 : Operand<i64> {
+  let PrintMethod = "printInlineJT16";
+}
+def InlineJT32 : Operand<i64> {
+  let PrintMethod = "printInlineJT32";
+}
+
 let isBranch = 1, isIndirectBranch = 1, isTerminator = 1, isBarrier = 1 in {
 def BRI : Simple<0b001101, 0b00000000000100000000000000,
        (outs), (ins GRegs:$rs),
        "jmp\t$rs",
        [(brind GRegs:$rs)]>;
+}
+// Because JTx can fall through (if out of range) what should we do?
+let isBranch = 1, isIndirectBranch = 1, isTerminator = 1, isBarrier = 1 in {
+def JT8 : Pseudo<
+	(outs), (ins InlineJT8:$t, GRegs:$i, i64imm:$n),
+	"jttb\t$i,#$n\n$t",
+	[(myJT8 tjumptable:$t, GRegs:$i, uimm16:$n)]>;
+def JT16 : Pseudo<
+	(outs), (ins InlineJT16:$t, GRegs:$i, i64imm:$n),
+	"jttb\t$i,#$n\n$t",
+	[(myJT16 tjumptable:$t, GRegs:$i, uimm16:$n)]>;
+def JT32 : Pseudo<
+	(outs), (ins InlineJT32:$t, GRegs:$i, i64imm:$n),
+	"jttw\t$i,#$n\n$t",
+	[(myJT32 tjumptable:$t, GRegs:$i, uimm16:$n)]>;
 }
 
 let isBranch = 1, isTerminator = 1 in {
@@ -467,6 +583,10 @@ def BRIB : BB<0b01100,
 	(outs), (ins brtarget:$adr, GRegs:$rs1, i64imm:$cb),
 	"brb1\t$cb,$rs1,$adr",
 	[(myBRcc bb:$adr, GRegs:$rs1, shfamt:$cb)]>;
+def BRFB : BB<0b01100,
+	(outs), (ins brtarget:$adr, GRegs:$rs1, i64imm:$cb),
+	"brb1\t$cb,$rs1,$adr",
+	[(myBRfcc bb:$adr, GRegs:$rs1, shfamt:$cb)]>;
 }
 
 let isCall = 1, isBarrier = 1, Defs = [R0] in {
@@ -480,6 +600,95 @@ def CALLI : HR<0b00000, 0b10,
 	[(myCALLI i64:$rs)]>;
 }
 def : Pat<(myCALL texternalsym:$adr), (CALL texternalsym:$adr)>;
+
+//
+// Experimental CARRY instruction and related stuff
+//
+let Constraints = "$rd = $rs" in {
+def CARRYio : ALU_RI<0b111110,
+	(outs GRegs:$rd), (ins GRegs:$rs, i64imm:$imm),
+	"carry\t$rd,#$imm",
+	[]>;
+}
+def CARRYo : ALU_RI<0b111110,
+	(outs GRegs:$rd), (ins i64imm:$imm),
+	"carry\t$rd,#$imm",
+	[]>;
+
+def SDT_ADDCO : SDTypeProfile<2, 2,
+		[SDTCisVT<0, i64>,SDTCisVT<1, i64>,SDTCisVT<2, i64>,
+		 SDTCisVT<3, i64>]>;
+def uaddo :	SDNode<"ISD::UADDO", SDT_ADDCO, []>;
+def SDT_ADDCIO : SDTypeProfile<2, 3,
+		[SDTCisVT<0, i64>,SDTCisVT<1, i64>,SDTCisVT<2, i64>,
+		 SDTCisVT<3, i64>,SDTCisVT<4, i64>]>;
+def addcarry :	SDNode<"ISD::ADDCARRY", SDT_ADDCIO, []>;
+def umul_lohi : SDNode<"ISD::UMUL_LOHI", SDTIntBinHiLoOp, []>;
+
+let usesCustomInserter = 1 in {
+def UADDOrr : Pseudo<
+	(outs GRegs:$sum, GRegs:$co), (ins GRegs:$lhs, GRegs:$rhs),
+	"# UADD0rr",
+	[(set GRegs:$sum, GRegs:$co, (uaddo GRegs:$lhs, GRegs:$rhs))]>;
+def UADDOri : Pseudo<
+	(outs GRegs:$sum, GRegs:$co), (ins GRegs:$lhs, i64imm:$rhs),
+	"# UADD0ri",
+	[(set GRegs:$sum, GRegs:$co, (uaddo GRegs:$lhs, simm16:$rhs))]>;
+def ADDCARRYrr : Pseudo<
+	(outs GRegs:$sum, GRegs:$co), (ins GRegs:$lhs, GRegs:$rhs, GRegs:$ci),
+	"# ADDCARRYr",
+	[(set GRegs:$sum, GRegs:$co, (addcarry GRegs:$lhs, GRegs:$rhs, GRegs:$ci))]>;
+def UMULHILOrr : Pseudo<
+	(outs GRegs:$lo, GRegs:$hi), (ins GRegs:$lhs, GRegs:$rhs),
+	"# UMULHILOrr",
+	[(set GRegs:$lo, GRegs:$hi, (umul_lohi GRegs:$lhs, GRegs:$rhs))]>;
+def UMULHILOri : Pseudo<
+	(outs GRegs:$lo, GRegs:$hi), (ins GRegs:$lhs, i64imm:$rhs),
+	"# UMULHILOri",
+	[(set GRegs:$lo, GRegs:$hi, (umul_lohi GRegs:$lhs, simm16:$rhs))]>;
+def UMULHILOrw : Pseudo<
+	(outs GRegs:$lo, GRegs:$hi), (ins GRegs:$lhs, i64imm:$rhs),
+	"# UMULHILOrw",
+	[(set GRegs:$lo, GRegs:$hi, (umul_lohi GRegs:$lhs, sneed32:$rhs))]>;
+def UDIVREMrr : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins GRegs:$lhs, GRegs:$rhs),
+	"# UDIVREMrr",
+	[(set GRegs:$div, GRegs:$rem, (udivrem GRegs:$lhs, GRegs:$rhs))]>;
+def UDIVREMri : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins GRegs:$lhs, i64imm:$rhs),
+	"# UDIVREMri",
+	[(set GRegs:$div, GRegs:$rem, (udivrem GRegs:$lhs, simm16:$rhs))]>;
+def UDIVREMrw : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins GRegs:$lhs, i64imm:$rhs),
+	"# UDIVREMrw",
+	[(set GRegs:$div, GRegs:$rem, (udivrem GRegs:$lhs, sneed32:$rhs))]>;
+def UDIVREMwr : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins i64imm:$lhs, GRegs:$rhs),
+	"# UDIVREMrw",
+	[(set GRegs:$div, GRegs:$rem, (udivrem simm32:$lhs, GRegs:$rhs))]>;
+}
+
+// Memory to memory copy
+def MEMCPY : ALU_RRM<0b101, 0b000,
+	(outs), (ins GRegs:$dst, GRegs:$src, GRegs:$len),
+	"mm\t$len,$src,$dst",
+	[(myMEMCPY GRegs:$dst, GRegs:$src, GRegs:$len)]>;
+
+//
+// Predication Instructions, never selected
+//
+def PRC : PC<0b000110,
+	(outs), (ins ccode:$cc, GRegs:$rs1, i16imm:$inf),
+	"pc\t$cc,$rs1,$inf",
+	[]>;
+def PRIB : PB<0b00011,
+	(outs), (ins i64imm:$cb, GRegs:$rs1, i16imm:$inf),
+	"pb1\t$cb,$rs1,$inf",
+	[]>;
+def PRFB : PB<0b00011,
+	(outs), (ins i64imm:$cb, GRegs:$rs1, i16imm:$inf),
+	"pb1\t$cb,$rs1,$inf",
+	[]>;
 
 //
 // Pseudo Instructions

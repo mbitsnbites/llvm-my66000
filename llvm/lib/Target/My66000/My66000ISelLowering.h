@@ -34,12 +34,18 @@ enum NodeType : unsigned {
   CALLI,	// Branch and link thru register (indirect call)
   CMP,		// CMP
   FCMP,		// Floating CMP
-  EXT,		// Extract
+  EXT,		// Extract zero extended
+  EXTS,		// Extract sign extended
   CMOV,		// Conditional move
+  MUX,		// Multiplex instruction
   BRcc,		// Branch on bit set by CMP
   BRfcc,	// Branch on bit set by FCMP
   BRbit,	// Branch on bit not set by a compare
-  BRcond,	// branch compare with zero
+  BRcond,	// Branch compare with zero
+  JT8,		// Jump through table, 8 bit
+  JT16,		// Jump through table, 16 bit
+  JT32,		// Jump through table, 32 bit
+  MEMCPY,	// Memory copy
   WRAPPER	// prefix for global address
 };
 
@@ -53,6 +59,8 @@ class My66000TargetLowering : public TargetLowering {
   explicit My66000TargetLowering(const TargetMachine &TM,
 			const My66000Subtarget &Subtarget);
 
+  unsigned getJumpTableEncoding() const override;
+
   /// Provide custom lowering hooks for some operations.
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
 
@@ -61,7 +69,8 @@ class My66000TargetLowering : public TargetLowering {
   bool isLegalAddressingMode(const DataLayout &DL, const AddrMode &AM,
 			Type *Ty, unsigned AS,
 			Instruction *I = nullptr) const override;
-
+  MachineBasicBlock *EmitInstrWithCustomInserter(MachineInstr &MI,
+			MachineBasicBlock *BB) const override;
 
  private:
   const My66000Subtarget &Subtarget;
@@ -70,8 +79,9 @@ class My66000TargetLowering : public TargetLowering {
   SDValue LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
-  SDValue LowerJumpTable(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerBR_JT(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerVASTART(SDValue Op, SelectionDAG &DAG) const;
 
   SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const override;
 
@@ -91,6 +101,8 @@ class My66000TargetLowering : public TargetLowering {
 			bool isVarArg,
 			const SmallVectorImpl<ISD::OutputArg> &ArgsFlags,
 			LLVMContext &Context) const override;
+  // Tuning knobs
+  bool isIntDivCheap(EVT VT, AttributeList Attr) const override;
 
 //    bool mayBeEmittedAsTailCall(const CallInst *CI) const override;
 };

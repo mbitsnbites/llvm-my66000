@@ -33,10 +33,15 @@ public:
   void printRegName(raw_ostream &OS, unsigned RegNo) const override;
   void printInst(const MCInst *MI, raw_ostream &O, StringRef Annot,
                  const MCSubtargetInfo &STI) override;
+  void printInlineJT8(const MCInst *MI, unsigned opNum, raw_ostream &O);
+  void printInlineJT16(const MCInst *MI, unsigned opNum, raw_ostream &O);
+  void printInlineJT32(const MCInst *MI, unsigned opNum, raw_ostream &O);
   void printOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);
   void printMEMriOperand(const MCInst *MI, int opNum, raw_ostream &O);
   void printMEMrrOperand(const MCInst *MI, int opNum, raw_ostream &O);
   void printFP64Operand(const MCInst *MI, int opNum, raw_ostream &O);
+  void printS16ImmOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);
+  void printS32ImmOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 };
 } // end namespace llvm
 

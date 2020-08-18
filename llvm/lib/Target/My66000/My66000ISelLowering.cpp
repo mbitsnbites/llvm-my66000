@@ -41,6 +41,12 @@ using namespace llvm;
 
 #define DEBUG_TYPE "my66000-lower"
 
+static cl::opt<bool> EnableCarry("enable-carry-generation", cl::Hidden,
+    cl::desc("enable the use of the CARRY prefix"), cl::init(false));
+
+static cl::opt<bool> OptimCarry("early-carry-coalesce", cl::Hidden,
+    cl::desc("try early carry coalescing"), cl::init(false));
+
 const char *My66000TargetLowering::getTargetNodeName(unsigned Opcode) const {
 
   switch (Opcode) {
@@ -50,11 +56,17 @@ const char *My66000TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case My66000ISD::CMP: return "My66000ISD::CMP";
   case My66000ISD::FCMP: return "My66000ISD::FCMP";
   case My66000ISD::EXT: return "My66000ISD::EXT";
+  case My66000ISD::EXTS: return "My66000ISD::EXTS";
   case My66000ISD::CMOV: return "My66000ISD::CMOV";
+  case My66000ISD::MUX: return "My66000ISD::MUX";
   case My66000ISD::BRcc: return "My66000ISD::BRcc";
   case My66000ISD::BRfcc: return "My66000ISD::BRfcc";
   case My66000ISD::BRbit: return "My66000ISD::BRbit";
   case My66000ISD::BRcond: return "My66000ISD::BRcond";
+  case My66000ISD::JT8: return "My66000ISD::JT8";
+  case My66000ISD::JT16: return "My66000ISD::JT16";
+  case My66000ISD::JT32: return "My66000ISD::JT32";
+  case My66000ISD::MEMCPY: return "My66000ISD::MEMCPY";
   case My66000ISD::WRAPPER: return "My66000ISD::WRAPPER";
   }
   return nullptr;
@@ -88,16 +100,13 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
 
   // Expand all 32-bit operations
   for (unsigned Opc = 0; Opc < ISD::BUILTIN_OP_END; ++Opc)
-    setOperationAction(Opc, MVT::i32, Expand);
-  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i32, Legal);
+    setOperationAction(Opc, MVT::i32, Promote);
 
   // Operations to get us off of the ground.
   // Basic.
   setOperationAction(ISD::ADD, MVT::i64, Legal);
   setOperationAction(ISD::SUB, MVT::i64, Legal);
   setOperationAction(ISD::MUL, MVT::i64, Legal);
-  setOperationAction(ISD::UDIV, MVT::i64, Legal);
-  setOperationAction(ISD::SDIV, MVT::i64, Legal);
   setOperationAction(ISD::AND, MVT::i64, Legal);
   setOperationAction(ISD::SMAX, MVT::i64, Legal);
   setOperationAction(ISD::SMIN, MVT::i64, Legal);
@@ -107,19 +116,39 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::SHL, MVT::i64, Legal);
   setOperationAction(ISD::SRA, MVT::i64, Legal);
   setOperationAction(ISD::SRL, MVT::i64, Legal);
-//  setOperationAction(ISD::ROTR, MVT::i64, Legal);
-  // We don't have a modulo instruction
-  setOperationAction(ISD::UREM, MVT::i64, Expand);
-  setOperationAction(ISD::SREM, MVT::i64, Expand);
-  setOperationAction(ISD::UDIVREM, MVT::i64, Expand);
-  setOperationAction(ISD::SDIVREM, MVT::i64, Expand);
-  // We don't have a double length multiply
-  setOperationAction(ISD::UMUL_LOHI, MVT::i64, Expand);
-  setOperationAction(ISD::SMUL_LOHI, MVT::i64, Expand);
-  setOperationAction(ISD::MULHU, MVT::i64, Expand);
-  setOperationAction(ISD::MULHS, MVT::i64, Expand);
-
+  //  setOperationAction(ISD::ROTR, MVT::i64, Legal);
+  setOperationAction(ISD::UDIV, MVT::i64, Legal);
+  setOperationAction(ISD::SDIV, MVT::i64, Legal);
+  if (!EnableCarry) {
+    // We don't have a modulo instruction
+    setOperationAction(ISD::UREM, MVT::i64, Expand);
+    setOperationAction(ISD::SREM, MVT::i64, Expand);
+    setOperationAction(ISD::UDIVREM, MVT::i64, Expand);
+    setOperationAction(ISD::SDIVREM, MVT::i64, Expand);
+    // We don't have a double length multiply
+    setOperationAction(ISD::MULHU, MVT::i64, Expand);
+    setOperationAction(ISD::MULHS, MVT::i64, Expand);
+    setOperationAction(ISD::UMUL_LOHI, MVT::i64, Expand);
+    setOperationAction(ISD::SMUL_LOHI, MVT::i64, Expand);
+  } else {  // Operations that require the CARRY instruction
+    // Expand individual REMs into DIVREMs.
+    setOperationAction(ISD::UREM, MVT::i64, Expand);
+    setOperationAction(ISD::SREM, MVT::i64, Expand);
+    setOperationAction(ISD::UDIVREM, MVT::i64, Legal);
+    setOperationAction(ISD::SDIVREM, MVT::i64, Legal);
+    setOperationAction(ISD::UMUL_LOHI, MVT::i64, Legal);
+    setOperationAction(ISD::SMUL_LOHI, MVT::i64, Legal);
+    setOperationAction(ISD::MULHU, MVT::i64, Expand);
+    setOperationAction(ISD::MULHS, MVT::i64, Expand);
+    setOperationAction(ISD::ADDCARRY, MVT::i64, Legal);
+    setOperationAction(ISD::SUBCARRY, MVT::i64, Legal);
+    setOperationAction(ISD::UADDO, MVT::i64, Legal);
+    setOperationAction(ISD::USUBO, MVT::i64, Legal);
+  }
   // Sign extend inreg
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i32, Legal);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i16, Legal);
+  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i8, Legal);
 //  setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i1, Custom);
   for (MVT VT : MVT::integer_valuetypes()) {
     setLoadExtAction(ISD::EXTLOAD, VT, MVT::i1, Promote);
@@ -138,8 +167,7 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::BRCOND, MVT::Other, Expand);
   // Expand jump table branches as address arithmetic followed by an
   // indirect jump.
-  setOperationAction(ISD::BR_JT, MVT::Other, Expand);
-  setOperationAction(ISD::JumpTable, MVT::i64, Custom);
+  setOperationAction(ISD::BR_JT, MVT::Other, Custom);
 
   // Have psuedo instruction for frame addresses.
   setOperationAction(ISD::FRAMEADDR, MVT::i64, Legal);
@@ -155,15 +183,42 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   // Other expansions
   setOperationAction(ISD::STACKSAVE, MVT::Other, Expand);
   setOperationAction(ISD::STACKRESTORE, MVT::Other, Expand);
+  setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i64, Expand);
+
+  // Indexed loads and stores are supported.
+  for (unsigned im = (unsigned)ISD::PRE_INC;
+       im != (unsigned)ISD::LAST_INDEXED_MODE; ++im) {
+    setIndexedLoadAction(im, MVT::i8, Legal);
+    setIndexedLoadAction(im, MVT::i16, Legal);
+    setIndexedLoadAction(im, MVT::i32, Legal);
+    setIndexedLoadAction(im, MVT::i64, Legal);
+    setIndexedLoadAction(im, MVT::f64, Legal);
+    setIndexedStoreAction(im, MVT::i8, Legal);
+    setIndexedStoreAction(im, MVT::i16, Legal);
+    setIndexedStoreAction(im, MVT::i32, Legal);
+    setIndexedStoreAction(im, MVT::i64, Legal);
+    setIndexedStoreAction(im, MVT::f64, Legal);
+  }
 
   // Floating point
   setOperationAction(ISD::ConstantFP, MVT::f64, Legal);
   setOperationAction(ISD::FADD, MVT::f64, Legal);
   setOperationAction(ISD::FMUL, MVT::f64, Legal);
   setOperationAction(ISD::FDIV, MVT::f64, Legal);
+  setOperationAction(ISD::FMA,  MVT::f64, Legal);
   setOperationAction(ISD::SELECT_CC, MVT::f64, Custom);
   setOperationAction(ISD::SETCC, MVT::f64, Custom);
   setOperationAction(ISD::BR_CC, MVT::f64, Custom);
+
+  MaxStoresPerMemcpy = 1;
+  MaxStoresPerMemcpyOptSize = 1;
+  MaxStoresPerMemmove = 1;
+  MaxStoresPerMemmoveOptSize = 1;
+//  MaxStoresPerMemset = 1;
+//  MaxStoresPerMemsetOptSize = 1;
+
+
+
 }
 
 //===----------------------------------------------------------------------===//
@@ -255,10 +310,10 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerSELECT_CC\n");
   }
   MYCB::CondBits CB = ISDCCtoMy66000CB(CC);
   SDValue Cmp = DAG.getNode(inst, dl, MVT::i64, LHS, RHS);
-  SDValue Ext = DAG.getNode(My66000ISD::EXT, dl, MVT::i64, Cmp,
+  SDValue Ext = DAG.getNode(My66000ISD::EXTS, dl, MVT::i64, Cmp,
 		     DAG.getConstant(1, dl, MVT::i64),
 		     DAG.getConstant(CB, dl, MVT::i64));
-  return DAG.getNode(My66000ISD::CMOV, dl, TVal.getValueType(), TVal, FVal, Ext);
+  return DAG.getNode(My66000ISD::MUX, dl, TVal.getValueType(), TVal, FVal, Ext);
 }
 
 SDValue My66000TargetLowering::LowerBR_CC(SDValue Op, SelectionDAG &DAG) const {
@@ -517,6 +572,11 @@ struct ArgDataPair {
 
 } // end anonymous namespace
 
+static const MCPhysReg ArgRegs[] = {
+  My66000::R16, My66000::R17, My66000::R18, My66000::R19,
+  My66000::R20, My66000::R21, My66000::R22, My66000::R23
+};
+
 /// Transform physical registers into virtual registers, and generate load
 /// operations for argument places on the stack.
 SDValue My66000TargetLowering::LowerFormalArguments(
@@ -558,8 +618,7 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerFormalArguments\n");
     CCValAssign &VA = ArgLocs[i];
     SDValue ArgIn;
 
-    if (VA.isRegLoc()) {
-      // Arguments passed in registers
+    if (VA.isRegLoc()) {      // Arguments passed in registers
       EVT RegVT = VA.getLocVT();
       switch (RegVT.getSimpleVT().SimpleTy) {
       default: {
@@ -574,9 +633,8 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerFormalArguments\n");
         ArgIn = DAG.getCopyFromReg(Chain, dl, VReg, RegVT);
         CFRegNode.push_back(ArgIn.getValue(ArgIn->getNumValues() - 1));
       }
-    } else {
-      // sanity check
-      assert(VA.isMemLoc());
+    } else {      		// Arguments passed in memory
+      assert(VA.isMemLoc());      // sanity check
       // Load the argument to a virtual register
       unsigned ObjSize = VA.getLocVT().getStoreSize();
       assert((ObjSize <= StackSlotSize) && "Unhandled argument");
@@ -594,39 +652,38 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerFormalArguments\n");
     ArgData.push_back(ADP);
   }
 
-  // 1b. CopyFromReg vararg registers.
+  // CopyFromReg vararg registers.
   if (IsVarArg) {
     // Argument registers
-    static const MCPhysReg ArgRegs[] =
-    {My66000::R4, My66000::R5, My66000::R6, My66000::R7,
-     My66000::R8, My66000::R9, My66000::R10, My66000::R11};
-    auto *AFI = MF.getInfo<My66000FunctionInfo>();
+    auto *XFI = MF.getInfo<My66000FunctionInfo>();
     unsigned FirstVAReg = CCInfo.getFirstUnallocated(ArgRegs);
     if (FirstVAReg < array_lengthof(ArgRegs)) {
-      int Offset = 0;
       // Save remaining registers, storing higher register numbers at a higher
       // address
       // There are (array_lengthof(ArgRegs) - FirstVAReg) registers which
       // need to be saved.
-      int VarFI =
-          MFI.CreateFixedObject((array_lengthof(ArgRegs) - FirstVAReg) * 4,
-                                CCInfo.getNextStackOffset(), true);
-      AFI->setVarArgsFrameIndex(VarFI);
-      SDValue FIN = DAG.getFrameIndex(VarFI, MVT::i64);
+      int VaSaveSize = (array_lengthof(ArgRegs) - FirstVAReg) * 8;
+      int Offset = -VaSaveSize;
+    // Record the frame index of the first variable argument
+    // which is a value necessary to VASTART.
+      int VaFI = MFI.CreateFixedObject(8, Offset, true);
+      XFI->setVarArgsFrameIndex(VaFI);
       for (unsigned i = FirstVAReg; i < array_lengthof(ArgRegs); i++) {
         // Move argument from phys reg -> virt reg
         unsigned VReg = RegInfo.createVirtualRegister(&My66000::GRegsRegClass);
         RegInfo.addLiveIn(ArgRegs[i], VReg);
         SDValue Val = DAG.getCopyFromReg(Chain, dl, VReg, MVT::i64);
-        CFRegNode.push_back(Val.getValue(Val->getNumValues() - 1));
-        SDValue VAObj = DAG.getNode(ISD::ADD, dl, MVT::i64, FIN,
-                                    DAG.getConstant(Offset, dl, MVT::i64));
+	VaFI = MFI.CreateFixedObject(8, Offset, true);
+	SDValue PtrOff = DAG.getFrameIndex(VaFI, MVT::i64);
         // Move argument from virt reg -> stack
         SDValue Store =
-            DAG.getStore(Val.getValue(1), dl, Val, VAObj, MachinePointerInfo());
+            DAG.getStore(Chain, dl, Val, PtrOff, MachinePointerInfo());
+        cast<StoreSDNode>(Store.getNode())->getMemOperand()
+	    ->setValue((Value *)nullptr);
         MemOps.push_back(Store);
-        Offset += 4;
+        Offset += 8;
       }
+      XFI->setVarArgsSaveSize(VaSaveSize);
     } else {
       llvm_unreachable("Too many var args parameters.");
     }
@@ -657,11 +714,12 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerFormalArguments\n");
   }
 
   // 4. Chain mem ops nodes into a TokenFactor.
-//  if (!MemOps.empty()) {
-//    MemOps.push_back(Chain);
-//    Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, MemOps);
-//  }
+  if (!MemOps.empty()) {
+    MemOps.push_back(Chain);
+    Chain = DAG.getNode(ISD::TokenFactor, dl, MVT::Other, MemOps);
+  }
 
+LLVM_DEBUG(dbgs() << "End LowerFormalArguments\n");
   return Chain;
 }
 
@@ -779,8 +837,15 @@ bool My66000TargetLowering::isLegalAddressingMode(const DataLayout &DL,
                                               const AddrMode &AM, Type *Ty,
                                               unsigned AS,
                                               Instruction *I) const {
-  return AM.Scale == 0;
+  // No global is ever allowed as a base.
+  if (AM.BaseGV)
+    return false;
+
+  // FIXME - for now, anything else goes
+  return true;
 }
+
+
 /*
 // Don't emit tail calls for the time being.
 bool My66000TargetLowering::mayBeEmittedAsTailCall(const CallInst *CI) const {
@@ -820,24 +885,52 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerGlobalAddress\n");
   return DAG.getNode(My66000ISD::WRAPPER, dl, PtrVT, Result);
 }
 
-/*
-SDValue My66000TargetLowering::LowerJumpTable(SDValue Op, SelectionDAG &DAG) const {
-  auto *N = cast<JumpTableSDNode>(Op);
-  SDValue GA = DAG.getTargetJumpTable(N->getIndex(), MVT::i32);
-  return DAG.getNode(My66000ISD::GAWRAPPER, SDLoc(N), MVT::i32, GA);
+unsigned My66000TargetLowering::getJumpTableEncoding() const {
+  return MachineJumpTableInfo::EK_Inline;
 }
-*/
-SDValue My66000TargetLowering::LowerJumpTable(SDValue Op,
+
+SDValue My66000TargetLowering::LowerBR_JT(SDValue Op,
                                               SelectionDAG &DAG) const {
-LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerJumpTable\n");
-  JumpTableSDNode *JT = cast<JumpTableSDNode>(Op);
-  SDLoc DL(JT);
+LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerBR_JT\n");
+  SDValue Chain = Op.getOperand(0);
+  SDValue Table = Op.getOperand(1);
+  SDValue Index = Op.getOperand(2);
+  SDLoc DL(Op);
+  JumpTableSDNode *JT = cast<JumpTableSDNode>(Table);
+  unsigned JTI = JT->getIndex();
+  MachineFunction &MF = DAG.getMachineFunction();
+  const MachineJumpTableInfo *MJTI = MF.getJumpTableInfo();
+  SDValue TargetJT = DAG.getTargetJumpTable(JT->getIndex(), MVT::i64);
 
-//  EVT PtrVT = getPointerTy(DAG.getDataLayout());
-  SDValue Result = DAG.getTargetJumpTable(JT->getIndex(), MVT::i64);
-  return DAG.getNode(My66000ISD::WRAPPER, DL, MVT::i64, Result);
+  unsigned NumEntries = MJTI->getJumpTables()[JTI].MBBs.size();
+//dbgs() << "NumEntries=" << NumEntries << '\n';
+  SDValue Size = DAG.getConstant(NumEntries, DL, MVT::i64);
+  // The width of the table entries really doesn't depend on the number
+  // of entries.  It depends more on the total size of the basic blocks
+  // to which the entries refer.  The basic blocks could be reordered,
+  // say sorted by size, to minimize the width of the entries.
+  // All of this is punted until later.
+  // For now, 8-bit entries aren't very useful.
+  unsigned OpCode = (NumEntries <= 1024) ? My66000ISD::JT16 :
+		    My66000ISD::JT32;
+  return DAG.getNode(OpCode, DL, MVT::Other, Chain, TargetJT, Index, Size);
 }
 
+SDValue My66000TargetLowering::LowerVASTART(SDValue Op,
+                                              SelectionDAG &DAG) const {
+LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerVASTART\n");
+  MachineFunction &MF = DAG.getMachineFunction();
+  auto *XFI = MF.getInfo<My66000FunctionInfo>();
+  SDLoc DL(Op);
+  SDValue FI = DAG.getFrameIndex(XFI->getVarArgsFrameIndex(),
+                                 getPointerTy(MF.getDataLayout()));
+
+  // vastart just stores the address of the VarArgsFrameIndex slot into the
+  // memory location argument.
+  const Value *SV = cast<SrcValueSDNode>(Op.getOperand(2))->getValue();
+  return DAG.getStore(Op.getOperand(0), DL, FI, Op.getOperand(1),
+                      MachinePointerInfo(SV));
+}
 
 SDValue My66000TargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
 LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerOperation\n");
@@ -847,8 +940,208 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerOperation\n");
   case ISD::SETCC:			return LowerSETCC(Op, DAG);
   case ISD::SIGN_EXTEND_INREG:		return LowerSIGN_EXTEND_INREG(Op, DAG);
   case ISD::GlobalAddress:		return LowerGlobalAddress(Op, DAG);
-  case ISD::JumpTable:			return LowerJumpTable(Op, DAG);
+  case ISD::BR_JT:			return LowerBR_JT(Op, DAG);
+  case ISD::VASTART:			return LowerVASTART(Op, DAG);
   default:
     llvm_unreachable("unimplemented operand");
+  }
+}
+
+//===----------------------------------------------------------------------===//
+//  Tuning knobs
+//===----------------------------------------------------------------------===//
+bool My66000TargetLowering::isIntDivCheap(EVT VT, AttributeList Attr) const {
+  return true;		// let's see what this does
+}
+
+//===----------------------------------------------------------------------===//
+//  Custom instruction emit
+//===----------------------------------------------------------------------===//
+//
+// An ADDCARRY is being emitted, so there must have been a
+// UADD0 that was emitted previously.  Search back to find
+// the CARRYo instruction that resulted.  Modify the immediate
+// to include the ADD instruction now being emitted, if they
+// are close enought together.
+static bool adjustFirstCarry(MachineInstr &MI, MachineBasicBlock *BB,
+				    unsigned imm, unsigned &reg) {
+  if (!OptimCarry) return false;
+  MachineBasicBlock::iterator I = MI;
+  I--;		// backup to before the ADDCARRY
+  unsigned n = 0;
+
+  while (I->getOpcode() != My66000::CARRYo) {
+    n += 1;
+    if (I == BB->begin()) {
+dbgs() << "did not find FirstCarry n=" << n << '\n';
+	return false;
+    }
+    I--;
+  }
+  unsigned old = I->getOperand(1).getImm();
+  unsigned chg = (imm << n*2) | old;
+dbgs() << "found FirstCarry n=" << n << " old=" << old << '\n';
+dbgs() << *I;
+  if (n > 8) return false;
+  reg = I->getOperand(0).getReg();
+  // Replace the immediate operand(1). Is there a better way to do this?
+  I->RemoveOperand(1);
+  I->addOperand(MachineOperand::CreateImm(chg));
+  return true;
+}
+
+static MachineBasicBlock *emitADDCARRY(MachineInstr &MI,
+                                       MachineBasicBlock *BB) {
+  MachineFunction &MF = *BB->getParent();
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  DebugLoc DL = MI.getDebugLoc();
+  unsigned Sum = MI.getOperand(0).getReg();
+  unsigned CO = MI.getOperand(1).getReg();
+  unsigned LHS = MI.getOperand(2).getReg();
+  unsigned RHS = MI.getOperand(3).getReg();
+  unsigned CI = MI.getOperand(4).getReg();
+  unsigned Reg;
+dbgs() << "emitADDCARRY\n" << MI << '\n';
+  if (!adjustFirstCarry(MI, BB, 3, Reg)) {
+    MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
+    unsigned CA = MRI.createVirtualRegister(&My66000::GRegsRegClass);
+    MachineInstr *Car =
+      BuildMI(*BB, MI, DL, TII.get(My66000::CARRYio), CA)
+	    .addReg(CI).addImm(3);	// InOut
+//      Car->tieOperands(0, 1);
+  }
+  MachineInstr *Add =
+    BuildMI(*BB, MI, DL, TII.get(My66000::ADDrr), Sum)
+	    .addReg(LHS).addReg(RHS)
+	    .addReg(CI, RegState::Implicit)
+	    .addReg(CO, RegState::ImplicitDefine);
+  Add->tieOperands(4, 3);
+  MI.eraseFromParent(); // The pseudo instruction is gone now.
+  return BB;
+}
+
+static MachineBasicBlock *emitUADDO(MachineInstr &MI,
+                                    MachineBasicBlock *BB, unsigned inst) {
+  MachineFunction &MF = *BB->getParent();
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  DebugLoc DL = MI.getDebugLoc();
+  unsigned Sum = MI.getOperand(0).getReg();
+  unsigned CO = MI.getOperand(1).getReg();
+  unsigned LHS = MI.getOperand(2).getReg();
+dbgs() << "emitUADD0\n" << MI << '\n';
+
+  BuildMI(*BB, MI, DL, TII.get(My66000::CARRYo), CO)
+      .addImm(2);	// Out
+  // FIXME - is there a way of doing this without the if?
+  if (inst == My66000::ADDrr) {
+    unsigned RHS = MI.getOperand(3).getReg();
+    BuildMI(*BB, MI, DL, TII.get(inst), Sum)
+      .addReg(LHS).addReg(RHS)
+      .addReg(CO, RegState::Implicit);
+  } else {
+    unsigned RHS = MI.getOperand(3).getImm();
+    BuildMI(*BB, MI, DL, TII.get(inst), Sum)
+      .addReg(LHS).addImm(RHS)
+      .addReg(CO, RegState::Implicit);
+  }
+  MI.eraseFromParent(); // The pseudo instruction is gone now.
+  return BB;
+}
+
+static MachineBasicBlock *emitUMULHILO(MachineInstr &MI,
+                                       MachineBasicBlock *BB, unsigned inst) {
+  MachineFunction &MF = *BB->getParent();
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  DebugLoc DL = MI.getDebugLoc();
+  // ISD::UMUL_LOHI is defined to return the low half first
+  unsigned LO = MI.getOperand(0).getReg();
+  unsigned HI = MI.getOperand(1).getReg();
+  unsigned LHS = MI.getOperand(2).getReg();
+  MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
+  unsigned CI = MRI.createVirtualRegister(&My66000::GRegsRegClass);
+LLVM_DEBUG(dbgs() << "emitUMULHILO\n" << MI << '\n');
+
+  BuildMI(*BB, MI, DL, TII.get(My66000::CARRYo), CI)
+      .addImm(2);	// Out
+  MachineInstr *Mul;
+  // FIXME - is there a way of doing this without the if?
+  if (inst == My66000::MULrr) {
+    unsigned RHS = MI.getOperand(3).getReg();
+    Mul = BuildMI(*BB, MI, DL, TII.get(inst), LO)
+	    .addReg(LHS).addReg(RHS)
+	    .addReg(CI, RegState::Implicit)
+	    .addReg(HI, RegState::ImplicitDefine);
+  } else {	// MULri, MULrw
+    unsigned RHS = MI.getOperand(3).getImm();
+    Mul = BuildMI(*BB, MI, DL, TII.get(inst), LO)
+	    .addReg(LHS).addImm(RHS)
+	    .addReg(CI, RegState::Implicit)
+	    .addReg(HI, RegState::ImplicitDefine);
+  }
+  Mul->tieOperands(4, 3);
+  MI.eraseFromParent(); // The pseudo instruction is gone now.
+  return BB;
+}
+
+static MachineBasicBlock *emitUDIVREM(MachineInstr &MI,
+                                       MachineBasicBlock *BB, unsigned inst) {
+  MachineFunction &MF = *BB->getParent();
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  DebugLoc DL = MI.getDebugLoc();
+  // ISD::UMUL_LOHI is defined to return the low half first
+  unsigned DIV = MI.getOperand(0).getReg();
+  unsigned REM = MI.getOperand(1).getReg();
+  MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
+  unsigned CI = MRI.createVirtualRegister(&My66000::GRegsRegClass);
+LLVM_DEBUG(dbgs() << "emitUDIVREM\n" << MI << '\n');
+
+  BuildMI(*BB, MI, DL, TII.get(My66000::CARRYo), CI)
+      .addImm(2);	// Out
+  MachineInstr *Div;
+  // FIXME - is there a way of doing this without the if?
+  if (inst == My66000::UDIVrr) {
+    unsigned LHS = MI.getOperand(2).getReg();
+    unsigned RHS = MI.getOperand(3).getReg();
+    Div =  BuildMI(*BB, MI, DL, TII.get(inst), DIV)
+	    .addReg(LHS).addReg(RHS)
+	    .addReg(CI, RegState::Implicit)
+	    .addReg(REM, RegState::ImplicitDefine);
+  } else if (inst == My66000::UDIVwr) {
+    unsigned LHS = MI.getOperand(2).getImm();
+    unsigned RHS = MI.getOperand(3).getReg();
+    Div =  BuildMI(*BB, MI, DL, TII.get(inst), DIV)
+	    .addImm(LHS).addReg(RHS)
+	    .addReg(CI, RegState::Implicit)
+	    .addReg(REM, RegState::ImplicitDefine);
+  } else {
+    unsigned LHS = MI.getOperand(2).getReg();
+    unsigned RHS = MI.getOperand(3).getImm();
+    Div =  BuildMI(*BB, MI, DL, TII.get(inst), DIV)
+	    .addReg(LHS).addImm(RHS)
+	    .addReg(CI, RegState::Implicit)
+	    .addReg(REM, RegState::ImplicitDefine);
+  }
+  Div->tieOperands(4, 3);
+  MI.eraseFromParent(); // The pseudo instruction is gone now.
+  return BB;
+}
+
+MachineBasicBlock *My66000TargetLowering::EmitInstrWithCustomInserter(
+			MachineInstr &MI,
+			MachineBasicBlock *BB) const {
+LLVM_DEBUG(dbgs() << "My66000TargetLowering::EmitInstrWithCustomInserter\n");
+  switch (MI.getOpcode()) {
+  default:
+    llvm_unreachable("Unexpected instr type to insert");
+  case My66000::UADDOrr:	return emitUADDO(MI, BB, My66000::ADDrr);
+  case My66000::UADDOri:	return emitUADDO(MI, BB, My66000::ADDri);
+  case My66000::ADDCARRYrr:	return emitADDCARRY(MI, BB);
+  case My66000::UMULHILOrr:	return emitUMULHILO(MI, BB, My66000::MULrr);
+  case My66000::UMULHILOri:	return emitUMULHILO(MI, BB, My66000::MULri);
+  case My66000::UMULHILOrw:	return emitUMULHILO(MI, BB, My66000::MULrw);
+  case My66000::UDIVREMrr:	return emitUDIVREM(MI, BB, My66000::UDIVrr);
+  case My66000::UDIVREMri:	return emitUDIVREM(MI, BB, My66000::UDIVri);
+  case My66000::UDIVREMrw:	return emitUDIVREM(MI, BB, My66000::UDIVrw);
+  case My66000::UDIVREMwr:	return emitUDIVREM(MI, BB, My66000::UDIVwr);
   }
 }

@@ -40,6 +40,10 @@ public:
       : BaseT(TM, F.getParent()->getDataLayout()), ST(TM->getSubtargetImpl()),
         TLI(ST->getTargetLowering()) {}
 
+  bool hasDivRemOp(Type *DataType, bool IsSigned)
+  { return true; }	// FIXME
+
+
 };
 
 } // end namespace llvm

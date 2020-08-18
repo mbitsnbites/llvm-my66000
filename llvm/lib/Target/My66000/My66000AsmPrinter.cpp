@@ -60,11 +60,8 @@ namespace {
 
     StringRef getPassName() const override { return "My66000 Assembly Printer"; }
 
-    void printInlineJT(const MachineInstr *MI, int opNum, raw_ostream &O,
-                       const std::string &directive = ".jmptable");
-    void printInlineJT32(const MachineInstr *MI, int opNum, raw_ostream &O) {
-      printInlineJT(MI, opNum, O, ".jmptable32");
-    }
+    void printInlineJT(const MachineInstr *MI, raw_ostream &O,
+		const std::string inst, const std::string &table);
     void printOperand(const MachineInstr *MI, int opNum, raw_ostream &O);
     bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
                          const char *ExtraCode, raw_ostream &O) override;
@@ -184,23 +181,6 @@ void My66000AsmPrinter::EmitFunctionEntryLabel() {
   OutStreamer->EmitLabel(CurrentFnSym);
 }
 
-void My66000AsmPrinter::
-printInlineJT(const MachineInstr *MI, int opNum, raw_ostream &O,
-              const std::string &directive) {
-  unsigned JTI = MI->getOperand(opNum).getIndex();
-  const MachineFunction *MF = MI->getParent()->getParent();
-  const MachineJumpTableInfo *MJTI = MF->getJumpTableInfo();
-  const std::vector<MachineJumpTableEntry> &JT = MJTI->getJumpTables();
-  const std::vector<MachineBasicBlock*> &JTBBs = JT[JTI].MBBs;
-  O << "\t" << directive << " ";
-  for (unsigned i = 0, e = JTBBs.size(); i != e; ++i) {
-    MachineBasicBlock *MBB = JTBBs[i];
-    if (i > 0)
-      O << ",";
-    MBB->getSymbol()->print(O, MAI);
-  }
-}
-
 void My66000AsmPrinter::printOperand(const MachineInstr *MI, int opNum,
                                    raw_ostream &O) {
   const DataLayout &DL = getDataLayout();
@@ -258,9 +238,45 @@ bool My66000AsmPrinter::PrintAsmMemoryOperand(const MachineInstr *MI,
   return false;
 }
 
+void My66000AsmPrinter::printInlineJT(const MachineInstr *MI,
+		raw_ostream &O, const std::string inst, const std::string &table) {
+  unsigned JTI = MI->getOperand(0).getIndex();
+  const MachineFunction *MF = MI->getParent()->getParent();
+  const MachineJumpTableInfo *MJTI = MF->getJumpTableInfo();
+  const std::vector<MachineJumpTableEntry> &JT = MJTI->getJumpTables();
+  const std::vector<MachineBasicBlock*> &JTBBs = JT[JTI].MBBs;
+  O << "\t" << inst << "\t";
+  printOperand(MI, 1, O);
+  O << ",#";
+  printOperand(MI, 2, O);
+  O << "\n\t" << table << "\t";
+  for (unsigned i = 0, e = JTBBs.size(); i != e; ++i) {
+    MachineBasicBlock *MBB = JTBBs[i];
+    if (i > 0)
+      O << ",";
+    MBB->getSymbol()->print(O, MAI);
+  }
+  O << "\n\t.p2align 2";
+}
+
 void My66000AsmPrinter::EmitInstruction(const MachineInstr *MI) {
   SmallString<128> Str;
   raw_svector_ostream O(Str);
+
+  switch (MI->getOpcode()) {
+  case My66000::JT8:
+    printInlineJT(MI, O, "jttb", ".jt8");
+    OutStreamer->EmitRawText(O.str());
+    return;
+  case My66000::JT16:
+    printInlineJT(MI, O, "jtth", ".jt16");
+    OutStreamer->EmitRawText(O.str());
+    return;
+  case My66000::JT32:
+    printInlineJT(MI, O, "jttw", ".jt32");
+    OutStreamer->EmitRawText(O.str());
+    return;
+  }
 
   MCInst TmpInst;
   MCInstLowering.Lower(MI, TmpInst);
