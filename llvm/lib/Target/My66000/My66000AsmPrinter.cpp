@@ -278,10 +278,13 @@ void My66000AsmPrinter::EmitInstruction(const MachineInstr *MI) {
     return;
   }
 
-  MCInst TmpInst;
-  MCInstLowering.Lower(MI, TmpInst);
-
-  EmitToStreamer(*OutStreamer, TmpInst);
+  MachineBasicBlock::const_instr_iterator I = MI->getIterator();
+  MachineBasicBlock::const_instr_iterator E = MI->getParent()->instr_end();
+  do {
+    MCInst TmpInst;
+    MCInstLowering.Lower(&*I, TmpInst);
+    EmitToStreamer(*OutStreamer, TmpInst);
+  } while ((++I != E) && I->isInsideBundle());
 }
 
 // Force static initialization.

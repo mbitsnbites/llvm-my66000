@@ -51,7 +51,5 @@ Command Line Options
 
 * Implement ELF output.  This could be a lot of work.
 
-* Enable clang support.
-
 * Enable lld support.  (Need ELF machine code assignment.)
 

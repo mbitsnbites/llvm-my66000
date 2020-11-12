@@ -23,8 +23,10 @@ defm FADD : ALUrr<"fadd", 0b110001, 0b00000, fadd>;
 defm FMUL : ALUrr<"fmul", 0b110010, 0b00000, fmul>;
 defm FDIV : ALUrr<"fdiv", 0b110011, 0b00000, fdiv>;
 // Caution: the next two semantics change with changes to IEEE-754
-defm FMAX : ALUrr<"fmax", 0b110110, 0b00000, fmaxnum>;
-defm FMIN : ALUrr<"fmin", 0b110111, 0b00000, fminnum>;
+defm FMAXN: ALUrr<"fmax", 0b110110, 0b00000, fmaxnum>;
+defm FMINN: ALUrr<"fmin", 0b110111, 0b00000, fminnum>;
+defm FMAX : ALUrr<"fmax", 0b110110, 0b00000, fmaximum>;
+defm FMIN : ALUrr<"fmin", 0b110111, 0b00000, fminimum>;
 // Can't use the standard pattern because the output type doesn't match inputs.
 let isCompare = 1 in {
 def FCMPrr : ALU_RR<0b110100, 0b00000,

@@ -614,6 +614,10 @@ def CARRYo : ALU_RI<0b111110,
 	(outs GRegs:$rd), (ins i64imm:$imm),
 	"carry\t$rd,#$imm",
 	[]>;
+def CARRYi : ALU_RI<0b111110,
+	(outs), (ins GRegs:$rs, i64imm:$imm),
+	"carry\t$rs,#$imm",
+	[]>;
 
 def SDT_ADDCO : SDTypeProfile<2, 2,
 		[SDTCisVT<0, i64>,SDTCisVT<1, i64>,SDTCisVT<2, i64>,
@@ -666,6 +670,22 @@ def UDIVREMwr : Pseudo<
 	(outs GRegs:$div, GRegs:$rem), (ins i64imm:$lhs, GRegs:$rhs),
 	"# UDIVREMrw",
 	[(set GRegs:$div, GRegs:$rem, (udivrem simm32:$lhs, GRegs:$rhs))]>;
+def ROTLrr : Pseudo<
+	(outs GRegs:$dst), (ins GRegs:$lhs, GRegs:$rhs),
+	"# ROTLrr",
+	[(set GRegs:$dst, (rotl GRegs:$lhs, GRegs:$rhs))]>;
+def ROTLri : Pseudo<
+	(outs GRegs:$dst), (ins GRegs:$lhs, i64imm:$rhs),
+	"# ROTLri",
+	[(set GRegs:$dst, (rotl GRegs:$lhs, simm16:$rhs))]>;
+def ROTRrr : Pseudo<
+	(outs GRegs:$dst), (ins GRegs:$lhs, GRegs:$rhs),
+	"# ROTRrr",
+	[(set GRegs:$dst, (rotr GRegs:$lhs, GRegs:$rhs))]>;
+def ROTRri : Pseudo<
+	(outs GRegs:$dst), (ins GRegs:$lhs, i64imm:$rhs),
+	"# ROTRri",
+	[(set GRegs:$dst, (rotr GRegs:$lhs, simm16:$rhs))]>;
 }
 
 // Memory to memory copy

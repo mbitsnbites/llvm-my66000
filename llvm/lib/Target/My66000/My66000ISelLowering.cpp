@@ -116,30 +116,26 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::SHL, MVT::i64, Legal);
   setOperationAction(ISD::SRA, MVT::i64, Legal);
   setOperationAction(ISD::SRL, MVT::i64, Legal);
-  //  setOperationAction(ISD::ROTR, MVT::i64, Legal);
+  setOperationAction(ISD::ROTR, MVT::i64, Legal);
+  setOperationAction(ISD::ROTL, MVT::i64, Legal);
   setOperationAction(ISD::UDIV, MVT::i64, Legal);
   setOperationAction(ISD::SDIV, MVT::i64, Legal);
+  // We don't have a modulo instruction use div+carry
+  setOperationAction(ISD::UREM, MVT::i64, Expand);
+  setOperationAction(ISD::SREM, MVT::i64, Expand);
+  // We don't have a double length multiply
+  setOperationAction(ISD::MULHU, MVT::i64, Expand);
+  setOperationAction(ISD::MULHS, MVT::i64, Expand);
   if (!EnableCarry) {
-    // We don't have a modulo instruction
-    setOperationAction(ISD::UREM, MVT::i64, Expand);
-    setOperationAction(ISD::SREM, MVT::i64, Expand);
     setOperationAction(ISD::UDIVREM, MVT::i64, Expand);
     setOperationAction(ISD::SDIVREM, MVT::i64, Expand);
-    // We don't have a double length multiply
-    setOperationAction(ISD::MULHU, MVT::i64, Expand);
-    setOperationAction(ISD::MULHS, MVT::i64, Expand);
     setOperationAction(ISD::UMUL_LOHI, MVT::i64, Expand);
     setOperationAction(ISD::SMUL_LOHI, MVT::i64, Expand);
   } else {  // Operations that require the CARRY instruction
-    // Expand individual REMs into DIVREMs.
-    setOperationAction(ISD::UREM, MVT::i64, Expand);
-    setOperationAction(ISD::SREM, MVT::i64, Expand);
     setOperationAction(ISD::UDIVREM, MVT::i64, Legal);
     setOperationAction(ISD::SDIVREM, MVT::i64, Legal);
     setOperationAction(ISD::UMUL_LOHI, MVT::i64, Legal);
     setOperationAction(ISD::SMUL_LOHI, MVT::i64, Legal);
-    setOperationAction(ISD::MULHU, MVT::i64, Expand);
-    setOperationAction(ISD::MULHS, MVT::i64, Expand);
     setOperationAction(ISD::ADDCARRY, MVT::i64, Legal);
     setOperationAction(ISD::SUBCARRY, MVT::i64, Legal);
     setOperationAction(ISD::UADDO, MVT::i64, Legal);
@@ -165,8 +161,7 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::SETCC, MVT::i64, Custom);
   setOperationAction(ISD::BR_CC, MVT::i64, Custom);
   setOperationAction(ISD::BRCOND, MVT::Other, Expand);
-  // Expand jump table branches as address arithmetic followed by an
-  // indirect jump.
+  setOperationAction(ISD::SELECT, MVT::i64, Expand);
   setOperationAction(ISD::BR_JT, MVT::Other, Custom);
 
   // Have psuedo instruction for frame addresses.
@@ -206,6 +201,10 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::FMUL, MVT::f64, Legal);
   setOperationAction(ISD::FDIV, MVT::f64, Legal);
   setOperationAction(ISD::FMA,  MVT::f64, Legal);
+  setOperationAction(ISD::FMINNUM, MVT::f64, Legal);
+  setOperationAction(ISD::FMAXNUM, MVT::f64, Legal);
+  setOperationAction(ISD::FMINIMUM, MVT::f64, Legal);
+  setOperationAction(ISD::FMAXIMUM, MVT::f64, Legal);
   setOperationAction(ISD::SELECT_CC, MVT::f64, Custom);
   setOperationAction(ISD::SETCC, MVT::f64, Custom);
   setOperationAction(ISD::BR_CC, MVT::f64, Custom);
@@ -1005,10 +1004,8 @@ dbgs() << "emitADDCARRY\n" << MI << '\n';
   if (!adjustFirstCarry(MI, BB, 3, Reg)) {
     MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
     unsigned CA = MRI.createVirtualRegister(&My66000::GRegsRegClass);
-    MachineInstr *Car =
-      BuildMI(*BB, MI, DL, TII.get(My66000::CARRYio), CA)
+    BuildMI(*BB, MI, DL, TII.get(My66000::CARRYio), CA)
 	    .addReg(CI).addImm(3);	// InOut
-//      Car->tieOperands(0, 1);
   }
   MachineInstr *Add =
     BuildMI(*BB, MI, DL, TII.get(My66000::ADDrr), Sum)
@@ -1126,6 +1123,32 @@ LLVM_DEBUG(dbgs() << "emitUDIVREM\n" << MI << '\n');
   return BB;
 }
 
+static MachineBasicBlock *emitROTx(MachineInstr &MI,
+                                       MachineBasicBlock *BB, unsigned inst) {
+  MachineFunction &MF = *BB->getParent();
+  const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
+  DebugLoc DL = MI.getDebugLoc();
+  unsigned ROT = MI.getOperand(0).getReg();
+  unsigned LHS = MI.getOperand(1).getReg();
+  MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
+LLVM_DEBUG(dbgs() << "emitROTx\n" << MI << '\n');
+  unsigned CI = MRI.createVirtualRegister(&My66000::GRegsRegClass);
+  BuildMI(*BB, MI, DL, TII.get(My66000::CARRYio), CI)
+	.addReg(LHS).addImm(1);	// In
+  if (inst == My66000::SLLrr || inst == My66000::SRLrr) {
+    unsigned RHS = MI.getOperand(2).getReg();
+    BuildMI(*BB, MI, DL, TII.get(inst), ROT)
+	    .addReg(CI).addReg(RHS);
+  } else {	// assume SxLri
+    unsigned RHS = MI.getOperand(2).getImm();
+    BuildMI(*BB, MI, DL, TII.get(inst), ROT)
+	    .addReg(CI).addImm(0).addImm(RHS);
+  }
+  MI.eraseFromParent(); // The pseudo instruction is gone now.
+  return BB;
+}
+
+
 MachineBasicBlock *My66000TargetLowering::EmitInstrWithCustomInserter(
 			MachineInstr &MI,
 			MachineBasicBlock *BB) const {
@@ -1143,5 +1166,9 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::EmitInstrWithCustomInserter\n");
   case My66000::UDIVREMri:	return emitUDIVREM(MI, BB, My66000::UDIVri);
   case My66000::UDIVREMrw:	return emitUDIVREM(MI, BB, My66000::UDIVrw);
   case My66000::UDIVREMwr:	return emitUDIVREM(MI, BB, My66000::UDIVwr);
+  case My66000::ROTLri:		return emitROTx(MI, BB, My66000::SLLri);
+  case My66000::ROTLrr:		return emitROTx(MI, BB, My66000::SLLrr);
+  case My66000::ROTRri:		return emitROTx(MI, BB, My66000::SRLri);
+  case My66000::ROTRrr:		return emitROTx(MI, BB, My66000::SRLrr);
   }
 }
