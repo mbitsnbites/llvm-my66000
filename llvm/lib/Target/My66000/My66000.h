@@ -34,6 +34,12 @@ namespace llvm {
   void initializeMy66000PredBlockPass(PassRegistry &p);
   FunctionPass *createMy66000FixJumpTablePass();
   void initializeMy66000FixJumpTablePass(PassRegistry &p);
+  FunctionPass *createMy66000VVMLoopPass();
+  void initializeMy66000VVMLoopPass(PassRegistry &p);
+  FunctionPass *createMy66000VVMFixupPass();
+  void initializeMy66000VVMFixupPass(PassRegistry &p);
+
+  extern char &My66000VVMLoopID;
 
   // Condition Codes used with BRcond
   namespace MYCC {

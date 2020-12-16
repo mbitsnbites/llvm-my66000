@@ -53,6 +53,7 @@ const char *My66000TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case My66000ISD::RET: return "My66000ISD::RET";
   case My66000ISD::CALL: return "My66000ISD::CALL";
   case My66000ISD::CALLI: return "My66000ISD::CALLI";
+  case My66000ISD::TAIL: return "My66000ISD::TAIL";
   case My66000ISD::CMP: return "My66000ISD::CMP";
   case My66000ISD::FCMP: return "My66000ISD::FCMP";
   case My66000ISD::EXT: return "My66000ISD::EXT";
@@ -200,11 +201,19 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::FADD, MVT::f64, Legal);
   setOperationAction(ISD::FMUL, MVT::f64, Legal);
   setOperationAction(ISD::FDIV, MVT::f64, Legal);
-  setOperationAction(ISD::FMA,  MVT::f64, Legal);
+  setOperationAction(ISD::FMA,  MVT::f64, Legal);	// this or FMAD?
+  setOperationAction(ISD::FMAD, MVT::f64, Legal);	// this or FMA
   setOperationAction(ISD::FMINNUM, MVT::f64, Legal);
   setOperationAction(ISD::FMAXNUM, MVT::f64, Legal);
   setOperationAction(ISD::FMINIMUM, MVT::f64, Legal);
   setOperationAction(ISD::FMAXIMUM, MVT::f64, Legal);
+  setOperationAction(ISD::FSIN, MVT::f64, Legal);
+  setOperationAction(ISD::FCOS, MVT::f64, Legal);
+  setOperationAction(ISD::FLOG, MVT::f64, Legal);
+  setOperationAction(ISD::FLOG2, MVT::f64, Legal);
+  setOperationAction(ISD::FLOG10, MVT::f64, Legal);
+  setOperationAction(ISD::FEXP, MVT::f64, Legal);
+  setOperationAction(ISD::FEXP2, MVT::f64, Legal);
   setOperationAction(ISD::SELECT_CC, MVT::f64, Custom);
   setOperationAction(ISD::SETCC, MVT::f64, Custom);
   setOperationAction(ISD::BR_CC, MVT::f64, Custom);
@@ -215,14 +224,35 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   MaxStoresPerMemmoveOptSize = 1;
 //  MaxStoresPerMemset = 1;
 //  MaxStoresPerMemsetOptSize = 1;
-
-
-
 }
+
+//===----------------------------------------------------------------------===//
+//  Tuning knobs
+//===----------------------------------------------------------------------===//
+bool My66000TargetLowering::isIntDivCheap(EVT VT, AttributeList Attr) const {
+  return true;		// let's see what this does
+}
+
+bool My66000TargetLowering::isFMAFasterThanFMulAndFAdd(EVT VT) const {
+  VT = VT.getScalarType();
+
+  if (!VT.isSimple())
+    return false;
+  switch (VT.getSimpleVT().SimpleTy) {
+  case MVT::f32:
+  case MVT::f64:
+    return true;
+  default:
+    break;
+  }
+  return false;
+}
+
 
 //===----------------------------------------------------------------------===//
 //  Misc Lower Operation implementation
 //===----------------------------------------------------------------------===//
+
 // Map to my condition bits
 static MYCB::CondBits ISDCCtoMy66000CB(ISD:: CondCode CC) {
   switch (CC) {
@@ -257,14 +287,30 @@ static MYCB::CondBits ISDCCtoMy66000CB(ISD:: CondCode CC) {
 // Map to my condition codes (used with BRcond)
 static MYCC::CondCodes ISDCCtoMy66000CC(ISD:: CondCode CC) {
   switch (CC) {
-  default: llvm_unreachable("Unknown integer condition code!");
+  default: llvm_unreachable("Unknown condition code!");
   case ISD::SETEQ:  return MYCC::EQ0;
   case ISD::SETNE:  return MYCC::NE0;
   case ISD::SETLT:  return MYCC::LT0;
   case ISD::SETGT:  return MYCC::GT0;
   case ISD::SETLE:  return MYCC::LE0;
   case ISD::SETGE:  return MYCC::GE0;
-  case ISD::SETUGT: return MYCC::NE0;
+  // float unordered
+  case ISD::SETUEQ: return MYCC::FEQ;
+  case ISD::SETUNE: return MYCC::FNE;
+  case ISD::SETUGE: return MYCC::FGE;
+  case ISD::SETULT: return MYCC::FLT;
+  case ISD::SETUGT: return MYCC::FGT;
+  case ISD::SETULE: return MYCC::FLE;
+  // float ordered
+  case ISD::SETOEQ: return MYCC::FEQ;
+  case ISD::SETONE: return MYCC::FNE;
+  case ISD::SETOGE: return MYCC::FGE;
+  case ISD::SETOLT: return MYCC::FLT;
+  case ISD::SETOGT: return MYCC::FGT;
+  case ISD::SETOLE: return MYCC::FLE;
+  // float check order
+  case ISD::SETO:   return MYCC::FCM;
+  case ISD::SETUO:  return MYCC::FUN;
   }
 }
 
@@ -324,8 +370,18 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerBR_CC\n");
   SDValue Dest = Op.getOperand(4);
   SDLoc dl(Op);
   if (LHS.getValueType().isInteger()) {
-    if (isNullConstant(RHS))
-    { MYCC::CondCodes cc = ISDCCtoMy66000CC(CC);
+    if (isNullConstant(RHS)) {
+      if (CC == ISD::SETNE &&
+          LHS.getOpcode() == ISD::AND &&
+          isa<ConstantSDNode>(LHS.getOperand(1)) &&
+          isPowerOf2_64(LHS.getConstantOperandVal(1))) {
+	// Can change BNE(AND x,#<single bit> into BB
+	uint64_t Mask = LHS.getConstantOperandVal(1);
+	return DAG.getNode(My66000ISD::BRbit, dl, MVT::Other, Chain, Dest,
+			   LHS.getOperand(0),
+			   DAG.getConstant(Log2_64(Mask), dl, MVT::i64));
+      }
+      MYCC::CondCodes cc = ISDCCtoMy66000CC(CC);
       return DAG.getNode(My66000ISD::BRcond, dl, MVT::Other, Chain, Dest,
 		         LHS, DAG.getConstant(cc, dl, MVT::i64));
     }
@@ -334,6 +390,11 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerBR_CC\n");
     return DAG.getNode(My66000ISD::BRcc, dl, MVT::Other, Chain, Dest, Cmp,
                        DAG.getConstant(cb, dl, MVT::i64));
   } else {
+    if (isNullFPConstant(RHS)) {
+      MYCC::CondCodes cc = ISDCCtoMy66000CC(CC);
+      return DAG.getNode(My66000ISD::BRcond, dl, MVT::Other, Chain, Dest,
+		         LHS, DAG.getConstant(cc, dl, MVT::i64));
+    }
     MYCB::CondBits cb = ISDCCtoMy66000CB(CC);
     SDValue Cmp = DAG.getNode(My66000ISD::FCMP, dl, MVT::i64, LHS, RHS);
     return DAG.getNode(My66000ISD::BRfcc, dl, MVT::Other, Chain, Dest, Cmp,
@@ -369,14 +430,12 @@ SDValue My66000TargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
   SmallVectorImpl<ISD::InputArg> &Ins = CLI.Ins;
   SDValue Chain = CLI.Chain;
   SDValue Callee = CLI.Callee;
-  bool &IsTailCall = CLI.IsTailCall;
   CallingConv::ID CallConv = CLI.CallConv;
   bool IsVarArg = CLI.IsVarArg;
+  bool IsTailCall = CLI.IsTailCall & !IsVarArg;
 LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerCall\n");
 
   MachineFunction &MF = DAG.getMachineFunction();
-
-  IsTailCall = false; // Do not support tail calls yet.
 
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CallConv, IsVarArg, DAG.getMachineFunction(), ArgLocs,
@@ -395,7 +454,9 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerCall\n");
   unsigned NumBytes = RetCCInfo.getNextStackOffset();
   auto PtrVT = getPointerTy(DAG.getDataLayout());
 
-  Chain = DAG.getCALLSEQ_START(Chain, NumBytes, 0, dl);
+  // Mark the start of the call.
+  if (!IsTailCall)
+    Chain = DAG.getCALLSEQ_START(Chain, NumBytes, 0, dl);
 
   SmallVector<std::pair<unsigned, SDValue>, 4> RegsToPass;
   SmallVector<SDValue, 12> MemOpChains;
@@ -483,18 +544,22 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerCall\n");
     Ops.push_back(DAG.getRegister(RegsToPass[i].first,
                                   RegsToPass[i].second.getValueType()));
 
-  if (!IsTailCall) {
-    // Add a register mask operand representing the call-preserved registers.
-    const TargetRegisterInfo *TRI = Subtarget.getRegisterInfo();
-    const uint32_t *Mask = TRI->getCallPreservedMask(MF, CallConv);
-    assert(Mask && "Missing call preserved mask for calling convention");
-    Ops.push_back(DAG.getRegisterMask(Mask));
-  }
+  // Add a register mask operand representing the call-preserved registers.
+  const TargetRegisterInfo *TRI = Subtarget.getRegisterInfo();
+  const uint32_t *Mask = TRI->getCallPreservedMask(MF, CallConv);
+  assert(Mask && "Missing call preserved mask for calling convention");
+  Ops.push_back(DAG.getRegisterMask(Mask));
 
   if (Glue.getNode())
     Ops.push_back(Glue);
 
-  Chain = DAG.getNode(IsDirect ? My66000ISD::CALL : My66000ISD::CALLI, dl, NodeTys, Ops);
+  if (IsTailCall) {
+    MF.getFrameInfo().setHasTailCall();
+    return DAG.getNode(My66000ISD::TAIL, dl, NodeTys, Ops);
+  }
+
+  Chain = DAG.getNode(IsDirect ? My66000ISD::CALL : My66000ISD::CALLI, dl,
+		      NodeTys, Ops);
   Glue = Chain.getValue(1);
 
   // Create the CALLSEQ_END node.
@@ -504,8 +569,6 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerCall\n");
 
   // Handle result values, copying them out of physregs into vregs that we
   // return.
-  if (IsTailCall)
-    return Chain;
   return lowerCallResult(Chain, Glue, RVLocs, dl, DAG, InVals);
 }
 
@@ -572,8 +635,8 @@ struct ArgDataPair {
 } // end anonymous namespace
 
 static const MCPhysReg ArgRegs[] = {
-  My66000::R16, My66000::R17, My66000::R18, My66000::R19,
-  My66000::R20, My66000::R21, My66000::R22, My66000::R23
+  My66000::R1, My66000::R2, My66000::R3, My66000::R4,
+  My66000::R5, My66000::R6, My66000::R7, My66000::R8
 };
 
 /// Transform physical registers into virtual registers, and generate load
@@ -944,13 +1007,6 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerOperation\n");
   default:
     llvm_unreachable("unimplemented operand");
   }
-}
-
-//===----------------------------------------------------------------------===//
-//  Tuning knobs
-//===----------------------------------------------------------------------===//
-bool My66000TargetLowering::isIntDivCheap(EVT VT, AttributeList Attr) const {
-  return true;		// let's see what this does
 }
 
 //===----------------------------------------------------------------------===//

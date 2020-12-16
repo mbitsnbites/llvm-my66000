@@ -24,6 +24,8 @@ add_llvm_target(My66000CodeGen
   My66000SelectionDAGInfo.cpp
   My66000PredicatePass.cpp
   My66000FixJumpTable.cpp
+  My66000VVMPass1.cpp
+  My66000VVMPass2.cpp
   )
 
 add_subdirectory(MCTargetDesc)

@@ -24,7 +24,7 @@
 using namespace llvm;
 
 #define DEBUG_TYPE "fix-jump-table"
-#define PASS_NAME "Remove range checks for jump tables"
+#define PASS_NAME "My66000 Remove range checks for jump tables"
 
 static cl::opt<bool> EnableRangeOpt("enable-remove-range-check", cl::Hidden,
   cl::desc("Enable the removal of range checks before jump via table"));

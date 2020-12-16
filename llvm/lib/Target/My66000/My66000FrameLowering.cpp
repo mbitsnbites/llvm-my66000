@@ -235,14 +235,32 @@ dbgs() << "Epilogue needs FP to recover SP: " << FPOffset << "\n";
   unsigned LoReg = XFI->getLoSavedReg();
   if (NSave) {
     int64_t Offset = StackSize - (NSave*8) - XFI->getVarArgsSaveSize();
-    BuildMI(MBB, MBBI, DL, TII->get(My66000::EXIT))
+    if (MFI.hasTailCall()) {
+      if (NSave > 1) {
+	BuildMI(MBB, MBBI, DL, TII->get(My66000::LDM))
+	      .addReg(LoReg, RegState::Define)
+ 	      .addReg(HiReg, RegState::Define)
+	      .addReg(SPReg)		// base register
+	      .addReg(My66000::R0)	// index register (none)
+	      .addImm(0)		// shift amount
+	      .addImm(Offset);
+	// if we saved more than 1, then SP was saved and will be restored
+      } else {
+	BuildMI(MBB, MBBI, DL, TII->get(My66000::LDDri))
+	      .addReg(HiReg, RegState::Define)
+	      .addReg(SPReg).addImm(Offset);
+        BuildMI(MBB, MBBI, DL, TII->get(My66000::ADDri), SPReg)
+	      .addReg(SPReg)
+	      .addImm(8);
+      }
+    } else {	// normal exit
+      BuildMI(MBB, MBBI, DL, TII->get(My66000::EXIT))
 	      .addReg(LoReg, RegState::Define)
 	      .addReg(HiReg, RegState::Define)
 	      .addImm(0)
 	      .addImm(Offset);
-    // FIXME - remove the return that follows
-    MBB.erase(MBBI);
-//dbgs() << *MBBI;
+      MBB.erase(MBBI); 	// remove the return
+    }
   }
   // Deallocate stack
 //  adjustReg(MBB, MBBI, DL, SPReg, SPReg, StackSize, MachineInstr::FrameDestroy);

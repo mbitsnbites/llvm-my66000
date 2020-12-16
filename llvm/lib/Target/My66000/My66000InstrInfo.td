@@ -79,10 +79,15 @@ def myBRcond :	    SDNode<"My66000ISD::BRcond", SDT_BRcond,
 			[SDNPHasChain]>;
 def myBRcc :	    SDNode<"My66000ISD::BRcc", SDT_BRcc,
 			[SDNPHasChain]>;
+def myBRbit :	    SDNode<"My66000ISD::BRbit", SDT_BRcc,
+			[SDNPHasChain]>;
 def myJT8 :	    SDNode<"My66000ISD::JT8", SDT_BR_JT, [SDNPHasChain]>;
 def myJT16 :	    SDNode<"My66000ISD::JT16", SDT_BR_JT, [SDNPHasChain]>;
 def myJT32 :	    SDNode<"My66000ISD::JT32", SDT_BR_JT, [SDNPHasChain]>;
 def myCALL :        SDNode<"My66000ISD::CALL",
+                        SDTypeProfile<0, -1, [SDTCisPtrTy<0>]>,
+			[SDNPHasChain, SDNPOptInGlue, SDNPOutGlue, SDNPVariadic]>;
+def myTAIL:	    SDNode<"My66000ISD::TAIL",
                         SDTypeProfile<0, -1, [SDTCisPtrTy<0>]>,
 			[SDNPHasChain, SDNPOptInGlue, SDNPOutGlue, SDNPVariadic]>;
 def myCALLI :	    SDNode<"My66000ISD::CALLI", SDT_CALL,
@@ -475,16 +480,13 @@ let mayStore = 1 in {
   defm STB : Store<"stb", 0b101000, 0b001000, i64, truncstorei8>;
 }
 
-//
-// EXPERIMENTAL LDM/STM!!!
-//
-def LDM : LDST_BD<0b100111,
-	(outs GRegs:$rd), (ins MEMri:$addr),
-	"ldm\t$rd,[$addr]",
+def LDM : LDST_BD<0b010011,
+	(outs), (ins GRegs:$rd, GRegs:$rs, MEMrr:$addr),
+	"ldm\t$rd,$rs,[$addr]",
 	[]>;
-def STM : LDST_BD<0b101100,
-	(outs), (ins GRegs:$rd, MEMri:$addr),
-	"stm\t$rd,[$addr]",
+def STM : LDST_BD<0b010100,
+	(outs), (ins GRegs:$rd, GRegs:$rs, MEMrr:$addr),
+	"stm\t$rd,$rs,[$addr]",
 	[]>;
 
 // ENTER/EXIT
@@ -527,6 +529,13 @@ include "My66000InstrInfoFP.td"
 //
 // Flow control
 //
+def CBOp : Operand<i8> {
+  let PrintMethod = "printCBOperand";
+}
+def CCOp : Operand<i8> {
+  let PrintMethod = "printCCOperand";
+}
+
 let isTerminator = 1, isReturn = 1, isBarrier = 1 in {
 def RET: Simple<0b001101, 0b00000000000100000000000000,
 	(outs), (ins),
@@ -587,6 +596,10 @@ def BRFB : BB<0b01100,
 	(outs), (ins brtarget:$adr, GRegs:$rs1, i64imm:$cb),
 	"brb1\t$cb,$rs1,$adr",
 	[(myBRfcc bb:$adr, GRegs:$rs1, shfamt:$cb)]>;
+def BBIT : BB<0b01100,
+	(outs), (ins brtarget:$adr, GRegs:$rs1, i64imm:$bit),
+	"bb1\t$bit,$rs1,$adr",
+	[(myBRbit bb:$adr, GRegs:$rs1, shfamt:$bit)]>;
 }
 
 let isCall = 1, isBarrier = 1, Defs = [R0] in {
@@ -599,7 +612,14 @@ def CALLI : HR<0b00000, 0b10,
 	"calli\t$rs",
 	[(myCALLI i64:$rs)]>;
 }
+let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
+def TAIL :  BR<0b011110,
+	(outs), (ins calltarget:$adr),
+	"br\t$adr",
+	[(myTAIL tglobaladdr:$adr)]>;
+}
 def : Pat<(myCALL texternalsym:$adr), (CALL texternalsym:$adr)>;
+def : Pat<(myTAIL texternalsym:$adr), (TAIL texternalsym:$adr)>;
 
 //
 // Experimental CARRY instruction and related stuff
@@ -709,6 +729,51 @@ def PRFB : PB<0b00011,
 	(outs), (ins i64imm:$cb, GRegs:$rs1, i16imm:$inf),
 	"pb1\t$cb,$rs1,$inf",
 	[]>;
+
+
+//
+// Virtual Vector Mode (VVM) Instructions
+//
+def VEC : VECF<0b111101,
+	(outs GRegs:$rd), (ins i16imm:$imm),
+	"vec\t$rd,$imm",
+	[]>;
+let isBranch = 1, isTerminator = 1 in {
+def LOOP1rr : ALU_RRR<0b111, 0b000,
+	(outs), (ins CBOp:$cnd, GRegs:$rt, GRegs:$ri, GRegs:$rb,
+		 GRegs:$ra, brtarget:$adr),
+	"loop\t$cnd,$rt,$ri,$rb",
+	[]>;
+def LOOP1ri : ALU_RRR<0b111, 0b000,
+	(outs), (ins CBOp:$cnd, GRegs:$rt, GRegs:$ri, i16imm:$ib,
+		 GRegs:$ra, brtarget:$adr),
+	"loop\t$cnd,$rt,$ri,#$ib",
+	[]>;
+def LOOP1ir : ALU_RRR<0b111, 0b000,
+	(outs), (ins CBOp:$cnd, GRegs:$rt, i16imm:$ii, GRegs:$rb,
+		 GRegs:$ra, brtarget:$adr),
+	"loop\t$cnd,$rt,#$ii,$rb",
+	[]>;
+def LOOP1ii : ALU_RRR<0b111, 0b000,
+	(outs), (ins CBOp:$cnd, GRegs:$rt, i16imm:$ii, i16imm:$ib,
+		 GRegs:$ra, brtarget:$adr),
+	"loop\t$cnd,$rt,#$ii,#$ib",
+	[]>;
+/*
+def LOOP2 : ALU_RRR<0b111, 0b000,
+	(outs), (ins CCOp:$cnd, GRegs:$rt, GRegs:$ra),
+	"loop\t$cnd,$rt",
+	[]>;
+def LOOP2i : ALU_RRR<0b111, 0b000,
+	(outs), (ins CCOp:$cnd, GRegs:$rt, i16imm:$ii, GRegs:$ra),
+	"loop\t$cnd,$rt,#$ii",
+	[]>;
+def LOOP2r : ALU_RRR<0b111, 0b000,
+	(outs), (ins CCOp:$cnd, GRegs:$rt, GRegs:$ri, GRegs:$ra),
+	"loop\t$cnd,$rt,$ri",
+	[]>;
+*/
+}
 
 //
 // Pseudo Instructions

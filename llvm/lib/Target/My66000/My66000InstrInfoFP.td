@@ -83,6 +83,36 @@ def FNEG : ALU_DR<0b110001, 0b10101,
 	"fadd\t$rd,#0,-$rs2",
 	[(set GRegs:$rd, (fneg GRegs:$rs2))]>;
 
+def FMArr : ALU_RRR<0b100, 0b000,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2, GRegs:$rs3),
+	"fmac\t$rd,$rs1,$rs2,$rs3",
+	[(set GRegs:$rd, (fma GRegs:$rs1, GRegs:$rs2, GRegs:$rs3))]>;
+def FMADrr : ALU_RRR<0b100, 0b000,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2, GRegs:$rs3),
+	"fmac\t$rd,$rs1,$rs2,$rs3",
+	[(set GRegs:$rd, (fmad GRegs:$rs1, GRegs:$rs2, GRegs:$rs3))]>;
+def FMADrn : ALU_RRR<0b100, 0b001,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2, GRegs:$rs3),
+	"fmac\t$rd,$rs1,$rs2,-$rs3",
+	[(set GRegs:$rd, (fmad GRegs:$rs1, GRegs:$rs2, (fneg GRegs:$rs3)))]>;
+// The patterns we are given requires rs1 and rs2 to be swapped
+def FMADnr : ALU_RRR<0b100, 0b010,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2, GRegs:$rs3),
+	"fmac\t$rd,$rs2,-$rs1,$rs3",
+	[(set GRegs:$rd, (fmad (fneg GRegs:$rs1), GRegs:$rs2, GRegs:$rs3))]>;
+def FMADnn : ALU_RRR<0b100, 0b010,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2, GRegs:$rs3),
+	"fmac\t$rd,$rs2,-$rs1,-$rs3",
+	[(set GRegs:$rd, (fmad (fneg GRegs:$rs1), GRegs:$rs2, (fneg GRegs:$rs3)))]>;
+def FMADrd : ALU_RRR<0b100, 0b000,
+	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2, fpimm64:$imm),
+	"fmac\t$rd,$rs1,$rs2,#$imm",
+	[(set GRegs:$rd, (fmad GRegs:$rs1, GRegs:$rs2, fpimm64:$imm))]>;
+def FMADdr : ALU_RRR<0b100, 0b000,
+	(outs GRegs:$rd), (ins GRegs:$rs1, fpimm64:$imm, GRegs:$rs3),
+	"fmac\t$rd,$rs1,#$imm,$rs3",
+	[(set GRegs:$rd, (fmad GRegs:$rs1, fpimm64:$imm, GRegs:$rs3))]>;
+
 // Moves
 def FMOVrd : ALU_RRR<0b000, 0b111,
 	(outs GRegs:$rd), (ins fpimm64:$imm),
@@ -113,10 +143,68 @@ def CVTds : CVT<0b100000, 0b00000,
 	[(set (i64 GRegs:$rd), (fp_to_sint (f64 GRegs:$rs1)))]>;
 
 // Transcendentals
-def SQRT : TRAN<0b001101, 0b00000,
+// For some reason some transcendentals are not pre-defined
+def fexp :  SDNode<"ISD::FEXP", SDTFPUnaryOp>;
+def flog :  SDNode<"ISD::FLOG", SDTFPUnaryOp>;
+def flog10: SDNode<"ISD::FLOG10", SDTFPUnaryOp>;
+
+// FIXME - should the pattern match be "any_*" as in any_fsqrt?
+def SQRT :  TRAN<0b001101, 0b00000,
 	(outs GRegs:$rd), (ins GRegs:$rs1),
 	"fsqrt\t$rd,$rs1",
 	[(set (f64 GRegs:$rd), (fsqrt (f64 GRegs:$rs1)))]>;
+def RSQRT : TRAN<0b001100, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"frsqrt\t$rd,$rs1",
+	[]>;
+def FLOG2 : TRAN<0b000000, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fln2\t$rd,$rs1",
+	[(set (f64 GRegs:$rd), (flog2 (f64 GRegs:$rs1)))]>;
+def FLOG :  TRAN<0b000001, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fln\t$rd,$rs1",
+	[(set (f64 GRegs:$rd), (flog (f64 GRegs:$rs1)))]>;
+def FLOG10: TRAN<0b000010, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"flog\t$rd,$rs1",
+	[(set (f64 GRegs:$rd), (flog10 (f64 GRegs:$rs1)))]>;
+def FEXP2 : TRAN<0b000100, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fexp2\t$rd,$rs1",
+	[(set (f64 GRegs:$rd), (fexp2 (f64 GRegs:$rs1)))]>;
+def FEXP :  TRAN<0b000101, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fexp\t$rd,$rs1",
+	[(set (f64 GRegs:$rd), (fexp (f64 GRegs:$rs1)))]>;
+def FEXP10: TRAN<0b000110, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fexp\t$rd,$rs1",
+	[]>;				// no ISD opcode
+def FSIN :  TRAN<0b011000, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fsin\t$rd,$rs1",
+	[(set (f64 GRegs:$rd), (fsin (f64 GRegs:$rs1)))]>;
+def FCOS :  TRAN<0b011001, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fcos\t$rd,$rs1",
+	[(set (f64 GRegs:$rd), (fcos (f64 GRegs:$rs1)))]>;
+def FTAN :  TRAN<0b011010, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"ftan\t$rd,$rs1",
+	[]>;				// no ISD opcode
+def FASIN : TRAN<0b011100, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fasin\t$rd,$rs1",
+	[]>;				// no ISD opcode
+def FACOS : TRAN<0b011101, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"facos\t$rd,$rs1",
+	[]>;				// no ISD opcode
+def FATAN : TRAN<0b011110, 0b00000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fatan\t$rd,$rs1",
+	[]>;				// no ISD opcode
 
 // These bitcasts are NOPs
 def       : Pat<(bitconvert (f64 GRegs:$rs)),

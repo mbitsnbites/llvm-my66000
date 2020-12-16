@@ -39,6 +39,14 @@ inline static const char *CondCodeString(unsigned CC) {
   case 5: return "gt0";
   case 6: return "le0";
   case 7: return "lt0";
+  case 8: return "fcm";
+  case 9: return "fun";
+  case 10: return "feq";
+  case 11: return "fne";
+  case 12: return "fge";
+  case 13: return "flt";
+  case 14: return "fgt";
+  case 15: return "fle";
   default: return "???";
   }
 }
@@ -133,13 +141,30 @@ static void printCarryBits(unsigned bits, raw_ostream &O) {
     O << '}';
 }
 
-static void printShadow(raw_ostream &OS, unsigned imm12) {
+static void printShadow(raw_ostream &O, unsigned imm12) {
   unsigned cnt = (imm12 >> 8) & 7;
-  OS << "0,";	// FIXME - perhaps unused field in predication instrs
+  O << "0,";	// FIXME - perhaps unused field in predication instrs
   for (unsigned i=0; i <= cnt; i++) {
-    OS << (((imm12&1) == 0) ? 'F' : 'T');
+    O << (((imm12&1) == 0) ? 'F' : 'T');
     imm12 >>= 1;
   }
+}
+
+static void printRegList(raw_ostream &O, unsigned imm21) {
+  unsigned reg = 0;
+  unsigned bit;
+
+    O << '{';
+    while (imm21 != 0) {
+      ++reg;			// first reg in mask is R1
+      bit = imm21 & 1;
+      imm21 >>= 1;
+      if (bit != 0) {
+        O << 'r' << reg;
+	if (imm21 != 0) O << ',';
+      }
+    }
+    O << '}';
 }
 
 void My66000InstPrinter::printInst(const MCInst *MI, raw_ostream &O,
@@ -207,6 +232,13 @@ void My66000InstPrinter::printInst(const MCInst *MI, raw_ostream &O,
     printOperand(MI, 1, O);
     O << ",";
     printShadow(O, MI->getOperand(2).getImm());
+    }
+    break;
+  case My66000::VEC: {
+    O << "\tvec\t";
+    printOperand(MI, 0, O);
+    O << ",";
+    printRegList(O, MI->getOperand(1).getImm());
     }
     break;
   default:
@@ -292,7 +324,7 @@ void My66000InstPrinter::printS32ImmOperand(const MCInst *MI, unsigned OpNo,
     printOperand(MI, OpNo, O);
 }
 
-void My66000InstPrinter::printFP64Operand(const MCInst *MI, int opNum,
+void My66000InstPrinter::printFP64Operand(const MCInst *MI, unsigned opNum,
 					raw_ostream &O) {
   union {
     double   f;
@@ -305,7 +337,7 @@ void My66000InstPrinter::printFP64Operand(const MCInst *MI, int opNum,
   }
 }
 
-void My66000InstPrinter::printMEMriOperand(const MCInst *MI, int opNum,
+void My66000InstPrinter::printMEMriOperand(const MCInst *MI, unsigned opNum,
                                          raw_ostream &O) {
   printOperand(MI, opNum, O);
   const MCOperand &MO = MI->getOperand(opNum+1);
@@ -315,7 +347,7 @@ void My66000InstPrinter::printMEMriOperand(const MCInst *MI, int opNum,
   printOperand(MI, opNum+1, O);
 }
 
-void My66000InstPrinter::printMEMrrOperand(const MCInst *MI, int opNum,
+void My66000InstPrinter::printMEMrrOperand(const MCInst *MI, unsigned opNum,
                                          raw_ostream &O) {
   const MCOperand &Op0 = MI->getOperand(opNum);
   if (Op0.isReg() && Op0.getReg() == My66000::R0)
@@ -334,4 +366,14 @@ void My66000InstPrinter::printMEMrrOperand(const MCInst *MI, int opNum,
   }
   O << ",";
   printOperand(MI, opNum+3, O);	// offset
+}
+
+void My66000InstPrinter::printCBOperand(const MCInst *MI, unsigned opNum,
+                                         raw_ostream &O) {
+  O << CondBitString(MI->getOperand(opNum).getImm());
+}
+
+void My66000InstPrinter::printCCOperand(const MCInst *MI, unsigned opNum,
+                                         raw_ostream &O) {
+  O << CondCodeString(MI->getOperand(opNum).getImm());
 }

@@ -83,7 +83,8 @@ void My66000InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
 }
 
 static inline bool IsCondBranch(unsigned Opc) {
-  return Opc == My66000::BRC || Opc == My66000::BRIB || Opc == My66000::BRFB;
+  return Opc == My66000::BRC ||
+         Opc == My66000::BRIB || Opc == My66000::BRFB || Opc == My66000::BBIT;
 }
 
 static inline bool IsUncondBranch(unsigned Opc) {
@@ -101,10 +102,25 @@ static void parseCondBranch(MachineInstr &LastInst, MachineBasicBlock *&Target,
                             SmallVectorImpl<MachineOperand> &Cond) {
   // Block ends with fall-through condbranch.
   assert(LastInst.getDesc().isConditionalBranch() && "Unknown condbranch");
-  Target = LastInst.getOperand(0).getMBB();
-  Cond.push_back(MachineOperand::CreateImm(LastInst.getOpcode()));
-  Cond.push_back(LastInst.getOperand(1));	// register
-  Cond.push_back(LastInst.getOperand(2));	// cond code/bits
+  switch (LastInst.getOpcode()) {
+    case My66000::LOOP1rr:
+    case My66000::LOOP1ri:
+    case My66000::LOOP1ir:
+    case My66000::LOOP1ii:
+      Target = LastInst.getOperand(5).getMBB();
+      Cond.push_back(MachineOperand::CreateImm(LastInst.getOpcode()));
+      Cond.push_back(LastInst.getOperand(0));	// cond code/bits
+      Cond.push_back(LastInst.getOperand(1));	// register
+      Cond.push_back(LastInst.getOperand(2));	// increment
+      Cond.push_back(LastInst.getOperand(3));	// bound
+      Cond.push_back(LastInst.getOperand(4));	// loop top register
+      break;
+    default:
+      Target = LastInst.getOperand(0).getMBB();
+      Cond.push_back(MachineOperand::CreateImm(LastInst.getOpcode()));
+      Cond.push_back(LastInst.getOperand(1));	// register
+      Cond.push_back(LastInst.getOperand(2));	// cond code/bits
+    }
 }
 
 
@@ -205,21 +221,30 @@ LLVM_DEBUG(dbgs() << "My66000InstrInfo::insertBranch\n");
 
   if (Cond.empty()) {
     assert(!FBB && "Unconditional branch with multiple successors!");
-//dbgs() << "\tunconditional\n";
     BuildMI(&MBB, DL, get(My66000::BRU)).addMBB(TBB);
     return 1;
   }
   // Conditional branch.
   unsigned Opc = Cond[0].getImm();
-//dbgs() << "\tconditional " << Opc << "\n";
-  BuildMI(&MBB, DL, get(Opc)).addMBB(TBB).add(Cond[1]).add(Cond[2]);
+LLVM_DEBUG(dbgs() << "\tconditional " << Opc << "\n");
+  switch (Opc) {
+    case My66000::LOOP1rr:
+    case My66000::LOOP1ri:
+    case My66000::LOOP1ir:
+    case My66000::LOOP1ii:
+      BuildMI(&MBB, DL, get(Opc)).add(Cond[1]).add(Cond[2]).add(Cond[3])
+	    .add(Cond[4]).add(Cond[5]).addMBB(TBB);
+      break;
+    default:
+      BuildMI(&MBB, DL, get(Opc)).addMBB(TBB).add(Cond[1]).add(Cond[2]);
+  }
 
   // One-way conditional branch.
   if (!FBB)
     return 1;
 
   // Two-way conditional branch.
-//dbgs() << "\ttwo-way\n";
+LLVM_DEBUG(dbgs() << "\ttwo-way\n");
   MachineInstr &MI = *BuildMI(&MBB, DL, get(My66000::BRU)).addMBB(FBB);
   if (BytesAdded)
     *BytesAdded += getInstSizeInBytes(MI);
@@ -234,16 +259,18 @@ LLVM_DEBUG(dbgs() << "My66000InstrInfo::removeBranch\n");
 
   if (I == MBB.end())
     return 0;
-  if (!IsBranch(I->getOpcode()))
+  if (!I->getDesc().isBranch())
+//  if (!IsBranch(I->getOpcode()))
     return 0;
-LLVM_DEBUG(dbgs() << "\tfirst " << I->getOpcode() << '\n');
+LLVM_DEBUG(dbgs() << *I);
   I->eraseFromParent();		// Remove the branch.
   I = MBB.end();
   if (I == MBB.begin()) return 1;
   --I;
-  if (!IsCondBranch(I->getOpcode()))
+  if (!I->getDesc().isConditionalBranch())
+//  if (!IsCondBranch(I->getOpcode()))
     return 1;
-LLVM_DEBUG(dbgs() << "\tsecond " << I->getOpcode() << '\n');
+LLVM_DEBUG(dbgs() << *I);
   I->eraseFromParent();		// Remove the branch.
   return 2;
 }
@@ -288,6 +315,6 @@ LLVM_DEBUG(dbgs() << "My66000InstrInfo::reverseBranchCondition\n");
      Cond[2].setImm(reverseBRIB(cb));
      return false;
   }
-  // BRFB not reversible
+  // BRFB, BBIT not reversible
   return true;
 }

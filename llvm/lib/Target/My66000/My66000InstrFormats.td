@@ -306,3 +306,14 @@ class TRAN<bits<6> func, bits<5> flags, dag outs, dag ins, string asmstr,
   let Inst{10-6}  = 0b11000;
   let Inst{5-0}   = func;
 }
+
+class VECF<bits<6> major, dag outs, dag ins, string asmstr,
+		  list<dag> pattern>
+    : My66000Inst<outs, ins, asmstr, pattern> {
+  bits<5> rd;		// dst register
+  bits<21> imm;
+  let Opcode = major;
+  let Inst{25-21} = rd;
+  let Inst{20-0}  = imm;
+  let Size = 4;
+}

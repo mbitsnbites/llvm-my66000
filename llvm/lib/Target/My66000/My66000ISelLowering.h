@@ -32,6 +32,7 @@ enum NodeType : unsigned {
   RET,		// Return with a flag operand. Operand 0 is the chain operand.
   CALL,		// Branch and link (direct call)
   CALLI,	// Branch and link thru register (indirect call)
+  TAIL,		// Tail call
   CMP,		// CMP
   FCMP,		// Floating CMP
   EXT,		// Extract zero extended
@@ -103,8 +104,8 @@ class My66000TargetLowering : public TargetLowering {
 			LLVMContext &Context) const override;
   // Tuning knobs
   bool isIntDivCheap(EVT VT, AttributeList Attr) const override;
+  bool isFMAFasterThanFMulAndFAdd(EVT VT) const override;
 
-//    bool mayBeEmittedAsTailCall(const CallInst *CI) const override;
 };
 
 } // end namespace llvm
