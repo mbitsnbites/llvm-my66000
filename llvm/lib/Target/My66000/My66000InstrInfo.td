@@ -191,6 +191,8 @@ def NOR   : Pat<(not (or GRegs:$rs1, GRegs:$rs2)),
 		(ANDnn GRegs:$rs1, GRegs:$rs2)>;
 def NAND  : Pat<(not (and GRegs:$rs1, GRegs:$rs2)),
 		(ORnn GRegs:$rs1, GRegs:$rs2)>;
+def ANDN  : Pat<(and GRegs:$rs1, (not GRegs:$rs2)),
+		(ANDrn GRegs:$rs1, GRegs:$rs2)>;
 def ABS   : Pat<(abs GRegs:$rs1),
 		(SMAXrn GRegs:$rs1, GRegs:$rs1)>;
 //
@@ -382,6 +384,22 @@ def POPZ : R1<0b001001, 0b01000,
 	(outs GRegs:$rd), (ins GRegs:$rs1),
 	"pop\t$rd,-$rs1",
 	[(set GRegs:$rd, (ctpop (xor GRegs:$rs1 ,-1)))]>;
+//
+// Experimental SWAP instructions
+//
+def SWAP:   R1<0b001001, 0b10000,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"swap\t$rd,$rs1",
+	[(set GRegs:$rd, (bswap GRegs:$rs1))]>;
+def SWAP32: R1<0b001001, 0b10001,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"swap32\t$rd,$rs1",
+	[(set GRegs:$rd, (srl (bswap GRegs:$rs1), (i64 32)))]>;
+def SWAP16: R1<0b001001, 0b10010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"swap16\t$rd,$rs1",
+	[(set GRegs:$rd, (srl (bswap GRegs:$rs1), (i64 48)))]>;
+
 
 //
 // Load/Store

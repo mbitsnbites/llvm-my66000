@@ -122,7 +122,7 @@ bool My66000VVMFixup::runOnMachineFunction(MachineFunction &MF) {
   bool Changed = false;
 
 //  if (!EnableVVM) return false;
-dbgs() << "VVMFixupPass: " << MF.getName() << '\n';
+LLVM_DEBUG(dbgs() << "VVMFixupPass: " << MF.getName() << '\n');
 
   MachineLoopInfo &MLI = getAnalysis<MachineLoopInfo>();
   SmallVector<MachineLoop *, 4> Loops(MLI.begin(), MLI.end());

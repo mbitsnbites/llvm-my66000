@@ -322,12 +322,26 @@ SDValue My66000TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
   SDLoc dl(Op);
   unsigned inst;
 LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerSETCC\n");
-  MYCB::CondBits CB = ISDCCtoMy66000CB(CC);
   if (LHS.getValueType().isInteger()) {
     inst = My66000ISD::CMP;
+    // Check for cmpne (and ry,(shl 1,rx),0) which is a bit test
+    // Turn it into (and (srl ry,rx),1)
+    if ((CC == ISD::SETNE) && isNullConstant(RHS) &&
+	(LHS.getNode()->getOpcode() == ISD::AND)) {
+        SDValue LLHS = LHS.getOperand(0);
+        SDValue LRHS = LHS.getOperand(1);
+      if ((LRHS.getNode()->getOpcode() == ISD::SHL) &&
+	  isOneConstant(LRHS->getOperand(0))) {
+	SDValue Shf = DAG.getNode(ISD::SRL, dl, MVT::i64,
+		LLHS, LRHS->getOperand(1));
+	return DAG.getNode(ISD::AND, dl, MVT::i64,
+		Shf, DAG.getConstant(1, dl, MVT::i64));
+      }
+    }
   } else {
     inst = My66000ISD::FCMP;
   }
+  MYCB::CondBits CB = ISDCCtoMy66000CB(CC);
   SDValue Cmp = DAG.getNode(inst, dl, MVT::i64, LHS, RHS);
   return DAG.getNode(My66000ISD::EXT, dl, MVT::i64, Cmp,
 		     DAG.getConstant(1, dl, MVT::i64),

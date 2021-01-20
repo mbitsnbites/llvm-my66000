@@ -219,7 +219,7 @@ LLVM_DEBUG(dbgs() << "My66000DAGToDAGISel::SelectADDRrr\n");
   return false;
 }
 
-
+// Found an AND, could be an extract or a bit clear
 bool My66000DAGToDAGISel::tryExtract(SDNode *N, bool isSigned) {
 LLVM_DEBUG(dbgs() << "My66000DAGToDAGISel::tryExtract " << N->getOperationName(0) << "\n");
   SDLoc dl(N);
@@ -250,7 +250,7 @@ LLVM_DEBUG(dbgs() << "\tunsigned extract pattern #1: w=" << Width << " o=" << Of
       else
       {	// We have AND with a mask.
         unsigned Width = countTrailingOnes(Andimm);
-	if (Width > 16)
+	if (Width > 15)
 	{ // A large mask is better done by SRLri than AND imm
 LLVM_DEBUG(dbgs() << "\tunsigned extract pattern #2: w=" << Width <<  "\n");
           SDValue Ops[] = { N->getOperand(0),
@@ -259,6 +259,21 @@ LLVM_DEBUG(dbgs() << "\tunsigned extract pattern #2: w=" << Width <<  "\n");
 	  CurDAG->SelectNodeTo(N, My66000::SRLri, MVT::i64, Ops);
           return true;
 	}
+      }
+    } else {	// AND of non-immediate
+      // Look for bit clear idiom with and(r,(rotl -2,r))
+      SDNode *N1 = N->getOperand(1).getNode();
+      if (N1->getOpcode() == ISD::ROTL &&
+	  isIntImmediate(N1->getOperand(0).getNode(), Shfimm) &&
+	  Shfimm == uint64_t(-2)) {
+LLVM_DEBUG(dbgs() << "\tbit clear idiom\n");
+	SDNode *NShf = CurDAG->getMachineNode(My66000::SLLwr, dl, MVT::i64,
+			    CurDAG->getTargetConstant(1, dl, MVT::i64),
+			    N1->getOperand(1));
+	CurDAG->SelectNodeTo(N, My66000::ANDrn, MVT::i64,
+			    N->getOperand(0),
+			    SDValue(NShf, 0));
+        return true;
       }
     }
   } else if (isOpcWithIntImmediate(N, ISD::SRA, Shfimm)) {
