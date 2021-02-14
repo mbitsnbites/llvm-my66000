@@ -384,22 +384,22 @@ def POPZ : R1<0b001001, 0b01000,
 	(outs GRegs:$rd), (ins GRegs:$rs1),
 	"pop\t$rd,-$rs1",
 	[(set GRegs:$rd, (ctpop (xor GRegs:$rs1 ,-1)))]>;
-//
-// Experimental SWAP instructions
-//
-def SWAP:   R1<0b001001, 0b10000,
-	(outs GRegs:$rd), (ins GRegs:$rs1),
-	"swap\t$rd,$rs1",
-	[(set GRegs:$rd, (bswap GRegs:$rs1))]>;
-def SWAP32: R1<0b001001, 0b10001,
-	(outs GRegs:$rd), (ins GRegs:$rs1),
-	"swap32\t$rd,$rs1",
-	[(set GRegs:$rd, (srl (bswap GRegs:$rs1), (i64 32)))]>;
-def SWAP16: R1<0b001001, 0b10010,
-	(outs GRegs:$rd), (ins GRegs:$rs1),
-	"swap16\t$rd,$rs1",
-	[(set GRegs:$rd, (srl (bswap GRegs:$rs1), (i64 48)))]>;
 
+//
+// Experimental BITR instruction
+//
+def BITR : SHF_RI<0b1100,
+	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$w, i64imm:$o),
+	"bitr\t$rd,$rs1,<$w:$o>",
+	[]>;
+def : Pat<(bswap GRegs:$rs1),
+	  (BITR GRegs:$rs1, 8, 0)>;
+def : Pat<(srl (bswap GRegs:$rs1), shfamt:$imm),
+	  (BITR GRegs:$rs1, 8, shfamt:$imm)>;
+def : Pat<(bitreverse GRegs:$rs1),
+	  (BITR GRegs:$rs1, 1, 0)>;
+def : Pat<(srl (bitreverse GRegs:$rs1), shfamt:$imm),
+	  (BITR GRegs:$rs1, 1, shfamt:$imm)>;
 
 //
 // Load/Store
@@ -543,6 +543,7 @@ let mayStore = 1 in {
 // Floating point
 //
 include "My66000InstrInfoFP.td"
+include "My66000InstrInfoFS.td"
 
 //
 // Flow control

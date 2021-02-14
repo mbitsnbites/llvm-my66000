@@ -78,6 +78,12 @@ static SDValue lowerCallResult(SDValue Chain, SDValue InFlag,
                                SDLoc dl, SelectionDAG &DAG,
                                SmallVectorImpl<SDValue> &InVals);
 
+MVT My66000TargetLowering::getRegisterTypeForCallingConv(LLVMContext &Context,
+				CallingConv::ID CC, EVT VT) const {
+    if (VT == MVT::f32)
+	return MVT::f32;
+    return My66000TargetLowering::getRegisterType(Context, VT);
+}
 
 My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
                                      const My66000Subtarget &Subtarget)
@@ -142,6 +148,7 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
     setOperationAction(ISD::UADDO, MVT::i64, Legal);
     setOperationAction(ISD::USUBO, MVT::i64, Legal);
   }
+  setOperationAction(ISD::BITREVERSE, MVT::i64, Legal);
   // Sign extend inreg
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i32, Legal);
   setOperationAction(ISD::SIGN_EXTEND_INREG, MVT::i16, Legal);
@@ -188,15 +195,17 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
     setIndexedLoadAction(im, MVT::i16, Legal);
     setIndexedLoadAction(im, MVT::i32, Legal);
     setIndexedLoadAction(im, MVT::i64, Legal);
+    setIndexedLoadAction(im, MVT::f32, Legal);
     setIndexedLoadAction(im, MVT::f64, Legal);
     setIndexedStoreAction(im, MVT::i8, Legal);
     setIndexedStoreAction(im, MVT::i16, Legal);
     setIndexedStoreAction(im, MVT::i32, Legal);
     setIndexedStoreAction(im, MVT::i64, Legal);
+    setIndexedStoreAction(im, MVT::f32, Legal);
     setIndexedStoreAction(im, MVT::f64, Legal);
   }
 
-  // Floating point
+  // 64-bit floating point
   setOperationAction(ISD::ConstantFP, MVT::f64, Legal);
   setOperationAction(ISD::FADD, MVT::f64, Legal);
   setOperationAction(ISD::FMUL, MVT::f64, Legal);
@@ -217,6 +226,22 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::SELECT_CC, MVT::f64, Custom);
   setOperationAction(ISD::SETCC, MVT::f64, Custom);
   setOperationAction(ISD::BR_CC, MVT::f64, Custom);
+
+  // 32-bit floating point
+  addRegisterClass(MVT::f32, &My66000::GRegsRegClass);
+  // Why do we have to do the following?
+  ValueTypeActions.setTypeAction(MVT::f32, TypeLegal);
+  setLoadExtAction(ISD::EXTLOAD, MVT::f64, MVT::f32, Expand);
+  setTruncStoreAction(MVT::f64, MVT::f32, Expand);
+  setOperationAction(ISD::BITCAST, MVT::f32, Legal);
+  setOperationAction(ISD::FP_EXTEND, MVT::f64, Legal);
+  setOperationAction(ISD::ConstantFP, MVT::f32, Legal);
+  setOperationAction(ISD::FADD, MVT::f32, Legal);
+  setOperationAction(ISD::FMUL, MVT::f32, Legal);
+  setOperationAction(ISD::FDIV, MVT::f32, Legal);
+  setOperationAction(ISD::SELECT_CC, MVT::f32, Custom);
+  setOperationAction(ISD::SETCC, MVT::f32, Custom);
+  setOperationAction(ISD::BR_CC, MVT::f32, Custom);
 
   MaxStoresPerMemcpy = 1;
   MaxStoresPerMemcpyOptSize = 1;
@@ -403,8 +428,9 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerBR_CC\n");
     SDValue Cmp = DAG.getNode(My66000ISD::CMP, dl, MVT::i64, LHS, RHS);
     return DAG.getNode(My66000ISD::BRcc, dl, MVT::Other, Chain, Dest, Cmp,
                        DAG.getConstant(cb, dl, MVT::i64));
-  } else {
-    if (isNullFPConstant(RHS)) {
+  } else {	// floating point
+    EVT VT = LHS.getValueType();
+    if (isNullFPConstant(RHS) && VT == MVT::f64) {
       MYCC::CondCodes cc = ISDCCtoMy66000CC(CC);
       return DAG.getNode(My66000ISD::BRcond, dl, MVT::Other, Chain, Dest,
 		         LHS, DAG.getConstant(cc, dl, MVT::i64));
@@ -696,6 +722,8 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerFormalArguments\n");
 
     if (VA.isRegLoc()) {      // Arguments passed in registers
       EVT RegVT = VA.getLocVT();
+LLVM_DEBUG(dbgs() << "LowerFormalArguments argument type: "
+		  << (unsigned)RegVT.getSimpleVT().SimpleTy << '\n');
       switch (RegVT.getSimpleVT().SimpleTy) {
       default: {
         LLVM_DEBUG(errs() << "LowerFormalArguments Unhandled argument type: "
@@ -704,6 +732,7 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerFormalArguments\n");
       }
       case MVT::i64:
       case MVT::f64:
+      case MVT::f32:
         unsigned VReg = RegInfo.createVirtualRegister(&My66000::GRegsRegClass);
         RegInfo.addLiveIn(VA.getLocReg(), VReg);
         ArgIn = DAG.getCopyFromReg(Chain, dl, VReg, RegVT);
@@ -1241,4 +1270,79 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::EmitInstrWithCustomInserter\n");
   case My66000::ROTRri:		return emitROTx(MI, BB, My66000::SRLri);
   case My66000::ROTRrr:		return emitROTx(MI, BB, My66000::SRLrr);
   }
+}
+
+//===----------------------------------------------------------------------===//
+//  Inline ASM support
+//===----------------------------------------------------------------------===//
+My66000TargetLowering::ConstraintType
+My66000TargetLowering::getConstraintType(StringRef Constraint) const {
+  if (Constraint.size() == 1) {
+    switch (Constraint[0]) {
+    default:
+      break;
+    case 'I':
+    case 'J':
+    case 'K':
+      return C_Immediate;
+    }
+  }
+  return TargetLowering::getConstraintType(Constraint);
+}
+
+std::pair<unsigned, const TargetRegisterClass *>
+My66000TargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                                                  StringRef Constraint,
+                                                  MVT VT) const {
+  // First, see if this is a constraint that directly corresponds to a
+  // RISCV register class.
+  if (Constraint.size() == 1) {
+    switch (Constraint[0]) {
+    case 'r':
+      return std::make_pair(0U, &My66000::GRegsRegClass);
+    default:
+      break;
+    }
+  }
+  return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
+}
+
+void My66000TargetLowering::LowerAsmOperandForConstraint(
+    SDValue Op, std::string &Constraint, std::vector<SDValue> &Ops,
+    SelectionDAG &DAG) const {
+  // Currently only support length 1 constraints.
+  if (Constraint.length() == 1) {
+    switch (Constraint[0]) {
+    case 'I':
+      // Validate & create a 16-bit signed immediate operand.
+      if (auto *C = dyn_cast<ConstantSDNode>(Op)) {
+        uint64_t CVal = C->getSExtValue();
+        if (isInt<16>(CVal))
+          Ops.push_back(
+              DAG.getTargetConstant(CVal, SDLoc(Op), MVT::i64));
+      }
+      return;
+    case 'J':
+      // Validate & create a 5-bit signed integer zero operand.
+      if (auto *C = dyn_cast<ConstantSDNode>(Op)) {
+        uint64_t CVal = C->getSExtValue();
+        if (isInt<5>(CVal))
+          Ops.push_back(
+              DAG.getTargetConstant(CVal, SDLoc(Op), MVT::i64));
+      }
+      return;
+    case 'K':
+      // Validate & create a 6-bit unsigned immediate operand.
+      if (auto *C = dyn_cast<ConstantSDNode>(Op)) {
+        uint64_t CVal = C->getZExtValue();
+        if (isUInt<6>(CVal))
+          Ops.push_back(
+              DAG.getTargetConstant(CVal, SDLoc(Op), MVT::i64));
+      }
+      return;
+    default:
+      break;
+    }
+  }
+  TargetLowering::LowerAsmOperandForConstraint(Op, Constraint, Ops, DAG);
 }

@@ -70,8 +70,34 @@ class My66000TargetLowering : public TargetLowering {
   bool isLegalAddressingMode(const DataLayout &DL, const AddrMode &AM,
 			Type *Ty, unsigned AS,
 			Instruction *I = nullptr) const override;
+
+  ConstraintType getConstraintType(StringRef Constraint) const override;
+
+//  unsigned getInlineAsmMemConstraint(StringRef ConstraintCode) const override;
+
+  std::pair<unsigned, const TargetRegisterClass *>
+  getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                               StringRef Constraint, MVT VT) const override;
+
+  void LowerAsmOperandForConstraint(SDValue Op, std::string &Constraint,
+                                    std::vector<SDValue> &Ops,
+                                    SelectionDAG &DAG) const override;
+
   MachineBasicBlock *EmitInstrWithCustomInserter(MachineInstr &MI,
 			MachineBasicBlock *BB) const override;
+
+  // Override default assumptions
+  MVT getRegisterTypeForCallingConv(LLVMContext &Context, CallingConv::ID CC,
+                                      EVT VT) const override;
+
+  unsigned
+  getExceptionPointerRegister(const Constant *PersonalityFn) const override {
+    return My66000::R1;
+  }
+  unsigned
+  getExceptionSelectorRegister(const Constant *PersonalityFn) const override {
+    return My66000::R2;
+  }
 
  private:
   const My66000Subtarget &Subtarget;
@@ -102,6 +128,7 @@ class My66000TargetLowering : public TargetLowering {
 			bool isVarArg,
 			const SmallVectorImpl<ISD::OutputArg> &ArgsFlags,
 			LLVMContext &Context) const override;
+
   // Tuning knobs
   bool isIntDivCheap(EVT VT, AttributeList Attr) const override;
   bool isFMAFasterThanFMulAndFAdd(EVT VT) const override;
