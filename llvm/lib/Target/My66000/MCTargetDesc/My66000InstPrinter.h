@@ -39,6 +39,7 @@ public:
   void printOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);
   void printMEMriOperand(const MCInst *MI, unsigned opNum, raw_ostream &O);
   void printMEMrrOperand(const MCInst *MI, unsigned opNum, raw_ostream &O);
+  void printFP32Operand(const MCInst *MI, unsigned opNum, raw_ostream &O);
   void printFP64Operand(const MCInst *MI, unsigned opNum, raw_ostream &O);
   void printS16ImmOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);
   void printS32ImmOperand(const MCInst *MI, unsigned OpNo, raw_ostream &O);

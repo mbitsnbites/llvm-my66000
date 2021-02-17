@@ -324,6 +324,19 @@ void My66000InstPrinter::printS32ImmOperand(const MCInst *MI, unsigned OpNo,
     printOperand(MI, OpNo, O);
 }
 
+void My66000InstPrinter::printFP32Operand(const MCInst *MI, unsigned opNum,
+					raw_ostream &O) {
+  union {
+    float    f;
+    uint32_t i;
+  } u;
+  const MCOperand &Op = MI->getOperand(opNum);
+  if (Op.isFPImm()) {
+    u.f = Op.getFPImm();
+    O << format_hex(u.i, 9, true);
+  }
+}
+
 void My66000InstPrinter::printFP64Operand(const MCInst *MI, unsigned opNum,
 					raw_ostream &O) {
   union {

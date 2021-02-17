@@ -191,7 +191,7 @@ def FEXP :  TRAN<0b000101, 0b00000,
 	[(set (f64 GRegs:$rd), (fexp (f64 GRegs:$rs1)))]>;
 def FEXP10: TRAN<0b000110, 0b00000,
 	(outs GRegs:$rd), (ins GRegs:$rs1),
-	"fexp\t$rd,$rs1",
+	"fexp10\t$rd,$rs1",
 	[]>;				// no ISD opcode
 def FSIN :  TRAN<0b011000, 0b00000,
 	(outs GRegs:$rd), (ins GRegs:$rs1),

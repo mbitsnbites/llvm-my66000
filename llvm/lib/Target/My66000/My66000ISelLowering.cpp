@@ -239,6 +239,17 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::FADD, MVT::f32, Legal);
   setOperationAction(ISD::FMUL, MVT::f32, Legal);
   setOperationAction(ISD::FDIV, MVT::f32, Legal);
+  setOperationAction(ISD::FMINNUM, MVT::f32, Legal);
+  setOperationAction(ISD::FMAXNUM, MVT::f32, Legal);
+  setOperationAction(ISD::FMINIMUM, MVT::f32, Legal);
+  setOperationAction(ISD::FMAXIMUM, MVT::f32, Legal);
+  setOperationAction(ISD::FSIN, MVT::f32, Legal);
+  setOperationAction(ISD::FCOS, MVT::f32, Legal);
+  setOperationAction(ISD::FLOG, MVT::f32, Legal);
+  setOperationAction(ISD::FLOG2, MVT::f32, Legal);
+  setOperationAction(ISD::FLOG10, MVT::f32, Legal);
+  setOperationAction(ISD::FEXP, MVT::f32, Legal);
+  setOperationAction(ISD::FEXP2, MVT::f32, Legal);
   setOperationAction(ISD::SELECT_CC, MVT::f32, Custom);
   setOperationAction(ISD::SETCC, MVT::f32, Custom);
   setOperationAction(ISD::BR_CC, MVT::f32, Custom);

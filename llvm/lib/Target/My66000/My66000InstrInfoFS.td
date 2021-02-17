@@ -10,7 +10,7 @@
 // 32-bit floating point stuff
 //
 def fpimm32 : Operand<f32>, FPImmLeaf<f32, [{ return true; }]>
-		{ let PrintMethod = "printFP64Operand"; }
+		{ let PrintMethod = "printFP32Operand"; }
 
 multiclass SPUrr<string OpName, bits<6>OpC, bits<5>Flags,
 		   SDPatternOperator OpNode> {
@@ -26,6 +26,11 @@ multiclass SPUrr<string OpName, bits<6>OpC, bits<5>Flags,
 defm FADDF : SPUrr<"faddf", 0b110001, 0b00010, fadd>;
 defm FMULF : SPUrr<"fmulf", 0b110010, 0b00010, fmul>;
 defm FDIVF : SPUrr<"fdivf", 0b110011, 0b00010, fdiv>;
+// Caution: the next two semantics change with changes to IEEE-754
+defm FMAXNF: SPUrr<"fmaxf", 0b110110, 0b00010, fmaxnum>;
+defm FMINNF: SPUrr<"fminf", 0b110111, 0b00010, fminnum>;
+defm FMAXF : SPUrr<"fmaxf", 0b110110, 0b00010, fmaximum>;
+defm FMINF : SPUrr<"fminf", 0b110111, 0b00010, fminimum>;
 
 let isCompare = 1 in {
 def FCMPFrr : ALU_RR<0b110100, 0b00010,
@@ -98,6 +103,64 @@ def CVTfs : CVT<0b101000, 0b00000,
 	(outs GRegs:$rd), (ins GRegs:$rs1),
 	"cvtfs\t$rd,$rs1",
 	[(set (i64 GRegs:$rd), (fp_to_sint (f32 GRegs:$rs1)))]>;
+
+// Transcendentals
+def SQRTF :  TRAN<0b001101, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fsqrtf\t$rd,$rs1",
+	[(set (f32 GRegs:$rd), (fsqrt (f32 GRegs:$rs1)))]>;
+def RSQRTF : TRAN<0b001100, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"frsqrtf\t$rd,$rs1",
+	[]>;
+def FLOG2F : TRAN<0b000000, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fln2f\t$rd,$rs1",
+	[(set (f32 GRegs:$rd), (flog2 (f32 GRegs:$rs1)))]>;
+def FLOGF :  TRAN<0b000001, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"flnf\t$rd,$rs1",
+	[(set (f32 GRegs:$rd), (flog (f32 GRegs:$rs1)))]>;
+def FLOG10F: TRAN<0b000010, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"flogf\t$rd,$rs1",
+	[(set (f32 GRegs:$rd), (flog10 (f32 GRegs:$rs1)))]>;
+def FEXP2F : TRAN<0b000100, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fexp2f\t$rd,$rs1",
+	[(set (f32 GRegs:$rd), (fexp2 (f32 GRegs:$rs1)))]>;
+def FEXPF :  TRAN<0b000101, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fexpf\t$rd,$rs1",
+	[(set (f32 GRegs:$rd), (fexp (f32 GRegs:$rs1)))]>;
+def FEXP10F: TRAN<0b000110, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fexp10f\t$rd,$rs1",
+	[]>;				// no ISD opcode
+def FSINF :  TRAN<0b011000, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fsinf\t$rd,$rs1",
+	[(set (f32 GRegs:$rd), (fsin (f32 GRegs:$rs1)))]>;
+def FCOSF :  TRAN<0b011001, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fcosf\t$rd,$rs1",
+	[(set (f32 GRegs:$rd), (fcos (f32 GRegs:$rs1)))]>;
+def FTANF :  TRAN<0b011010, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"ftanf\t$rd,$rs1",
+	[]>;				// no ISD opcode
+def FASINF : TRAN<0b011100, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fasinf\t$rd,$rs1",
+	[]>;				// no ISD opcode
+def FACOSF : TRAN<0b011101, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"facosf\t$rd,$rs1",
+	[]>;				// no ISD opcode
+def FATANF : TRAN<0b011110, 0b00010,
+	(outs GRegs:$rd), (ins GRegs:$rs1),
+	"fatanf\t$rd,$rs1",
+	[]>;				// no ISD opcode
 
 // Loads and Stores
 let mayLoad = 1 in {
