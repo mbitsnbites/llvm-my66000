@@ -39,7 +39,7 @@ inline static const char *CondCodeString(unsigned CC) {
   case 5: return "gt0";
   case 6: return "le0";
   case 7: return "lt0";
-  case 8: return "fcm";
+  case 8: return "for";
   case 9: return "fun";
   case 10: return "feq";
   case 11: return "fne";
@@ -47,6 +47,14 @@ inline static const char *CondCodeString(unsigned CC) {
   case 13: return "flt";
   case 14: return "fgt";
   case 15: return "fle";
+  case 16: return "forf";
+  case 17: return "funf";
+  case 18: return "feqf";
+  case 19: return "fnef";
+  case 20: return "fgef";
+  case 21: return "fltf";
+  case 22: return "fgtf";
+  case 23: return "flef";
   default: return "???";
   }
 }

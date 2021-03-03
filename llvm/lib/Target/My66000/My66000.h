@@ -44,9 +44,9 @@ namespace llvm {
   // Condition Codes used with BRcond
   namespace MYCC {
     enum CondCodes {
-	NM=0,  NN,  EQ0, NE0, GE0, GT0, LE0, LT0,	// integer
-	FCM=8, FUN, FEQ, FNE, FGE, FLT, FLE, FGT,	// float
-	FDE=16, FIF=18, FNA=20, FNEG=22,		// float
+	NM=0,   NN,  EQ0, NE0, GE0, GT0, LE0, LT0,	// integer
+	FOR=8,  FUN, FEQ, FNE, FGE, FLT, FGT, FLE,	// float double
+	FORF=16,FUNF,FEQF,FNEF,FGEF,FLTF,FGTF,FLEF,	// float single
 	IN=24, EXIT, RFE=30, AL=31
     };
   }

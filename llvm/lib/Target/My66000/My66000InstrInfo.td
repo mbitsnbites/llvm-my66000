@@ -142,42 +142,42 @@ defm AND : ALUri<"and", 0b111010, and>;
 //
 // ALU RR
 //
-multiclass ALUrr<string OpName, bits<6>OpC, bits<5>Flags,
+multiclass ALUrr<string OpName, bits<6>OpC, bits<5>Flags, ValueType VT,
 		   SDPatternOperator OpNode> {
   def rr : ALU_RR<OpC, Flags,
 	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
 	!strconcat(OpName, "\t$rd,$rs1,$rs2"),
-	[(set GRegs:$rd, (OpNode GRegs:$rs1, GRegs:$rs2))]>;
+	[(set (VT GRegs:$rd), (OpNode (VT GRegs:$rs1), (VT GRegs:$rs2)))]>;
   def rn : ALU_RR<OpC, Flags,
 	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
 	!strconcat(OpName, "\t$rd,$rs1,-$rs2"),
 	[]>;
   def nr : ALU_RR<OpC, Flags,
 	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
-	!strconcat(OpName, "\t$rd,-$rs1,-$rs2"),
+	!strconcat(OpName, "\t$rd,-$rs1,$rs2"),
 	[]>;
   def nn : ALU_RR<OpC, Flags,
 	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2),
 	!strconcat(OpName, "\t$rd,-$rs1,-$rs2"),
 	[]>;
 }
-defm ADD  : ALUrr<"add",  0b100000, 0b00000, add>;
-defm MUL  : ALUrr<"mul",  0b100001, 0b00000, mul>;
-defm UDIV : ALUrr<"div",  0b100010, 0b00000, udiv>;
-defm SDIV : ALUrr<"divs", 0b100010, 0b00010, sdiv>;
+defm ADD  : ALUrr<"add",  0b100000, 0b00000, i64, add>;
+defm MUL  : ALUrr<"mul",  0b100001, 0b00000, i64, mul>;
+defm UDIV : ALUrr<"div",  0b100010, 0b00000, i64, udiv>;
+defm SDIV : ALUrr<"divs", 0b100010, 0b00010, i64, sdiv>;
 let isCompare = 1 in {
-defm CMP  : ALUrr<"cmp",  0b100100, 0b00000, myCMP>;
+defm CMP  : ALUrr<"cmp",  0b100100, 0b00000, i64, myCMP>;
 }
-defm OR   : ALUrr<"or",   0b101000, 0b00000, or>;
-defm XOR  : ALUrr<"xor",  0b101001, 0b00000, xor>;
-defm AND  : ALUrr<"and",  0b101010, 0b00000, and>;
-defm UMAX : ALUrr<"max",  0b100110, 0b00000, umax>;
-defm UMIN : ALUrr<"min",  0b100111, 0b00000, umin>;
-defm SMAX : ALUrr<"maxs", 0b100110, 0b00010, smax>;
-defm SMIN : ALUrr<"mins", 0b100111, 0b00010, smin>;
-defm SLL  : ALUrr<"sll",  0b101101, 0b00000, shl>;
-defm SRL  : ALUrr<"srl",  0b101100, 0b00000, srl>;
-defm SRA  : ALUrr<"sra",  0b101100, 0b00010, sra>;
+defm OR   : ALUrr<"or",   0b101000, 0b00000, i64, or>;
+defm XOR  : ALUrr<"xor",  0b101001, 0b00000, i64, xor>;
+defm AND  : ALUrr<"and",  0b101010, 0b00000, i64, and>;
+defm UMAX : ALUrr<"max",  0b100110, 0b00000, i64, umax>;
+defm UMIN : ALUrr<"min",  0b100111, 0b00000, i64, umin>;
+defm SMAX : ALUrr<"maxs", 0b100110, 0b00010, i64, smax>;
+defm SMIN : ALUrr<"mins", 0b100111, 0b00010, i64, smin>;
+defm SLL  : ALUrr<"sll",  0b101101, 0b00000, i64, shl>;
+defm SRL  : ALUrr<"srl",  0b101100, 0b00000, i64, srl>;
+defm SRA  : ALUrr<"sra",  0b101100, 0b00010, i64, sra>;
 
 def SUB   : Pat<(sub GRegs:$rs1, GRegs:$rs2),
 		(ADDrn GRegs:$rs1, GRegs:$rs2)>;
@@ -187,6 +187,14 @@ def NADD  : Pat<(ineg (add GRegs:$rs1, GRegs:$rs2)),
 // both a*-b and -a*b are expressed as -(a*b)
 def       : Pat<(ineg (mul GRegs:$rs1, GRegs:$rs2)),
 		(MULrn GRegs:$rs1, GRegs:$rs2)>;
+def       : Pat<(udiv GRegs:$rs1, (ineg GRegs:$rs2)),
+		(UDIVrn GRegs:$rs1, GRegs:$rs2)>;
+def       : Pat<(udiv (ineg GRegs:$rs1), GRegs:$rs2),
+		(UDIVnr GRegs:$rs1, GRegs:$rs2)>;
+def       : Pat<(sdiv GRegs:$rs1, (ineg GRegs:$rs2)),
+		(SDIVrn GRegs:$rs1, GRegs:$rs2)>;
+def       : Pat<(sdiv (ineg GRegs:$rs1), GRegs:$rs2),
+		(SDIVnr GRegs:$rs1, GRegs:$rs2)>;
 def NOR   : Pat<(not (or GRegs:$rs1, GRegs:$rs2)),
 		(ANDnn GRegs:$rs1, GRegs:$rs2)>;
 def NAND  : Pat<(not (and GRegs:$rs1, GRegs:$rs2)),
@@ -208,7 +216,6 @@ multiclass ALUrw<string OpName, bits<6>OpC, bits<5>Flags,
 defm ADD  : ALUrw<"add",  0b100000, 0b10000, add>;
 defm MUL  : ALUrw<"mul",  0b100001, 0b10000, mul>;
 defm UDIV : ALUrw<"div",  0b100010, 0b10000, udiv>;
-defm SDIV : ALUrw<"div",  0b100010, 0b10010, sdiv>;
 let isCompare = 1 in {
 defm CMP  : ALUrw<"cmp",  0b100100, 0b10000, myCMP>;
 }
@@ -220,21 +227,33 @@ defm SRL  : ALUrw<"srl",  0b101100, 0b00000, srl>;
 defm SRA  : ALUrw<"sra",  0b101100, 0b00010, sra>;
 
 //
-// ALU RX - don't have 16-bit immediate versions
+// ALU XR - don't have 16-bit immediate versions
 // Because they commute and have a version with 5-bit immediate
 // as the first operand, we generate the immediate that way.
+//
+multiclass ALUxr<string OpName, bits<6>OpC, bits<5>Flags,
+		   SDPatternOperator OpNode> {
+  def xr : ALU_WR<OpC, Flags,
+	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm),
+	!strconcat(OpName, "\t$rd,#$imm,$rs1"),
+	[(set GRegs:$rd, (OpNode GRegs:$rs1, simm32:$imm))]>;
+}
+defm UMAX : ALUxr<"max",  0b100110, 0b00000, umax>;
+defm UMIN : ALUxr<"min",  0b100111, 0b00000, umin>;
+defm SMAX : ALUxr<"maxs", 0b100110, 0b00010, smax>;
+defm SMIN : ALUxr<"mins", 0b100111, 0b00010, smin>;
+
+//
+// ALU RX - don't have 16-bit immediate versions and don't commute
 //
 multiclass ALUrx<string OpName, bits<6>OpC, bits<5>Flags,
 		   SDPatternOperator OpNode> {
   def rx : ALU_RW<OpC, Flags,
 	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm),
-	!strconcat(OpName, "\t$rd,#$imm,$rs1"),
+	!strconcat(OpName, "\t$rd,$rs1,#$imm"),
 	[(set GRegs:$rd, (OpNode GRegs:$rs1, simm32:$imm))]>;
 }
-defm UMAX : ALUrx<"max",  0b100110, 0b00000, umax>;
-defm UMIN : ALUrx<"min",  0b100111, 0b00000, umin>;
-defm SMAX : ALUrx<"maxs", 0b100110, 0b00010, smax>;
-defm SMIN : ALUrx<"mins", 0b100111, 0b00010, smin>;
+defm SDIV : ALUrx<"divs", 0b100010, 0b10010, sdiv>;
 
 //
 // ALU RD
@@ -246,6 +265,10 @@ multiclass ALUrd<string OpName, bits<6>OpC, bits<5>Flags,
 	!strconcat(OpName, "\t$rd,$rs1,#$imm"),
 	[(set GRegs:$rd, (OpNode GRegs:$rs1, sneed64:$imm))]>;
 }
+defm ADD  : ALUrd<"add",  0b100000, 0b10000, add>;
+defm MUL  : ALUrd<"mul",  0b100001, 0b10000, mul>;
+defm UDIV : ALUrd<"div",  0b100010, 0b00000, udiv>;
+defm SDIV : ALUrd<"divs", 0b100010, 0b00010, sdiv>;
 defm OR   : ALUrd<"or",   0b101000, 0b10000, or>;
 defm XOR  : ALUrd<"xor",  0b101001, 0b10000, xor>;
 defm AND  : ALUrd<"and",  0b101010, 0b10000, and>;
@@ -255,6 +278,7 @@ defm CMP  : ALUrd<"cmp",  0b100100, 0b10000, myCMP>;
 
 //
 // ALU WR
+// Only non-commutative operations need apply
 //
 multiclass ALUwr<string OpName, bits<6>OpC, bits<5>Flags,
 		   SDPatternOperator OpNode> {
@@ -263,14 +287,32 @@ multiclass ALUwr<string OpName, bits<6>OpC, bits<5>Flags,
 	!strconcat(OpName, "\t$rd,#$imm,$rs2"),
 	[(set GRegs:$rd, (OpNode simm32:$imm, GRegs:$rs2))]>;
 }
-// Only non-commutative operations need apply
 defm UDIV : ALUwr<"div",  0b100010, 0b10000, udiv>;
+defm SDIV : ALUwr<"divs", 0b100010, 0b10010, sdiv>;
 defm SLL  : ALUwr<"sll",  0b101101, 0b10000, shl>;
 defm SRL  : ALUwr<"srl",  0b101100, 0b00000, srl>;
-def SUBwr : ALU_RR<0b100000, 0b00100,
+def SUBwr : ALU_WR<0b100000, 0b00100,
 	(outs GRegs:$rd), (ins i64imm:$imm, GRegs:$rs2),
 	"add\t$rd,#$imm,-$rs2",
 	[(set GRegs:$rd, (sub simm32:$imm, GRegs:$rs2))]>;
+
+//
+// ALU DR
+// Only non-commutative operations need apply
+//
+multiclass ALUdr<string OpName, bits<6>OpC, bits<5>Flags,
+		   SDPatternOperator OpNode> {
+  def dr : ALU_DR<OpC, Flags,
+	(outs GRegs:$rd), (ins i64imm:$imm, GRegs:$rs1),
+	!strconcat(OpName, "\t$rd,#$imm,$rs1"),
+	[(set GRegs:$rd, (OpNode sneed64:$imm, GRegs:$rs1))]>;
+}
+defm UDIV : ALUdr<"div",  0b100010, 0b10000, udiv>;
+defm SDIV : ALUdr<"divs", 0b100010, 0b10010, sdiv>;
+def SUBdr : ALU_DR<0b100000, 0b00100,
+	(outs GRegs:$rd), (ins i64imm:$imm, GRegs:$rs2),
+	"add\t$rd,#$imm,-$rs2",
+	[(set GRegs:$rd, (sub sneed64:$imm, GRegs:$rs2))]>;
 
 //
 // MOVs
@@ -305,20 +347,19 @@ def MOVrr : ALU_RRR<0b000, 0b010,
 	[]>
 	{ let rs1 = 0b00000; let rs3 = 0b00000; }
 
-def CMOVrrr : ALU_RRR<0b000, 0b001,
+def CMOVrrr : ALU_RRR<0b001, 0b001,
 	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2, GRegs:$rs3),
 	"cmov\t$rd,$rs3,$rs1,$rs2",
 	[(set (i64 GRegs:$rd), (myCMOV GRegs:$rs1, GRegs:$rs2, GRegs:$rs3))]>;
-
-def MUXrrr :  ALU_RRR<0b000, 0b000,
+def MUXrrr :  ALU_RRR<0b001, 0b000,
 	(outs GRegs:$rd), (ins GRegs:$rs1, GRegs:$rs2, GRegs:$rs3),
 	"mux\t$rd,$rs3,$rs1,$rs2",
 	[(set (i64 GRegs:$rd), (myMUX GRegs:$rs1, GRegs:$rs2, GRegs:$rs3))]>;
-def MUXrrw :  ALU_RRR<0b000, 0b100,
+def MUXrrw :  ALU_RRR<0b001, 0b100,
 	(outs GRegs:$rd), (ins GRegs:$rs1, s32imm64:$imm, GRegs:$rs3),
 	"mux\t$rd,$rs3,$rs1,#$imm",
 	[(set (i64 GRegs:$rd), (myMUX GRegs:$rs1, simm32:$imm, GRegs:$rs3))]>;
-def MUXrrd :  ALU_RRR<0b000, 0b110,
+def MUXrrd :  ALU_RRR<0b001, 0b110,
 	(outs GRegs:$rd), (ins GRegs:$rs1, i64imm:$imm, GRegs:$rs3),
 	"mux\t$rd,$rs3,$rs1,#$imm",
 	[(set (i64 GRegs:$rd), (myMUX GRegs:$rs1, sneed64:$imm, GRegs:$rs3))]>;
@@ -543,7 +584,6 @@ let mayStore = 1 in {
 // Floating point
 //
 include "My66000InstrInfoFP.td"
-include "My66000InstrInfoFS.td"
 
 //
 // Flow control

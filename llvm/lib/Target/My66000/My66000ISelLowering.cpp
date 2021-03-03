@@ -223,6 +223,11 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::FLOG10, MVT::f64, Legal);
   setOperationAction(ISD::FEXP, MVT::f64, Legal);
   setOperationAction(ISD::FEXP2, MVT::f64, Legal);
+  setOperationAction(ISD::FFLOOR, MVT::f64, Legal);
+  setOperationAction(ISD::FCEIL, MVT::f64, Legal);
+  setOperationAction(ISD::FTRUNC, MVT::f64, Legal);
+  setOperationAction(ISD::FROUND, MVT::f64, Legal);
+  setOperationAction(ISD::FNEARBYINT, MVT::f64, Legal);
   setOperationAction(ISD::SELECT_CC, MVT::f64, Custom);
   setOperationAction(ISD::SETCC, MVT::f64, Custom);
   setOperationAction(ISD::BR_CC, MVT::f64, Custom);
@@ -239,6 +244,8 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::FADD, MVT::f32, Legal);
   setOperationAction(ISD::FMUL, MVT::f32, Legal);
   setOperationAction(ISD::FDIV, MVT::f32, Legal);
+  setOperationAction(ISD::FMA,  MVT::f32, Legal);	// this or FMAD?
+  setOperationAction(ISD::FMAD, MVT::f32, Legal);	// this or FMA
   setOperationAction(ISD::FMINNUM, MVT::f32, Legal);
   setOperationAction(ISD::FMAXNUM, MVT::f32, Legal);
   setOperationAction(ISD::FMINIMUM, MVT::f32, Legal);
@@ -250,6 +257,11 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::FLOG10, MVT::f32, Legal);
   setOperationAction(ISD::FEXP, MVT::f32, Legal);
   setOperationAction(ISD::FEXP2, MVT::f32, Legal);
+  setOperationAction(ISD::FFLOOR, MVT::f32, Legal);
+  setOperationAction(ISD::FCEIL, MVT::f32, Legal);
+  setOperationAction(ISD::FTRUNC, MVT::f32, Legal);
+  setOperationAction(ISD::FROUND, MVT::f32, Legal);
+  setOperationAction(ISD::FNEARBYINT, MVT::f32, Legal);
   setOperationAction(ISD::SELECT_CC, MVT::f32, Custom);
   setOperationAction(ISD::SETCC, MVT::f32, Custom);
   setOperationAction(ISD::BR_CC, MVT::f32, Custom);
@@ -321,32 +333,59 @@ static MYCB::CondBits ISDCCtoMy66000CB(ISD:: CondCode CC) {
 }
 
 // Map to my condition codes (used with BRcond)
-static MYCC::CondCodes ISDCCtoMy66000CC(ISD:: CondCode CC) {
-  switch (CC) {
-  default: llvm_unreachable("Unknown condition code!");
-  case ISD::SETEQ:  return MYCC::EQ0;
-  case ISD::SETNE:  return MYCC::NE0;
-  case ISD::SETLT:  return MYCC::LT0;
-  case ISD::SETGT:  return MYCC::GT0;
-  case ISD::SETLE:  return MYCC::LE0;
-  case ISD::SETGE:  return MYCC::GE0;
-  // float unordered
-  case ISD::SETUEQ: return MYCC::FEQ;
-  case ISD::SETUNE: return MYCC::FNE;
-  case ISD::SETUGE: return MYCC::FGE;
-  case ISD::SETULT: return MYCC::FLT;
-  case ISD::SETUGT: return MYCC::FGT;
-  case ISD::SETULE: return MYCC::FLE;
-  // float ordered
-  case ISD::SETOEQ: return MYCC::FEQ;
-  case ISD::SETONE: return MYCC::FNE;
-  case ISD::SETOGE: return MYCC::FGE;
-  case ISD::SETOLT: return MYCC::FLT;
-  case ISD::SETOGT: return MYCC::FGT;
-  case ISD::SETOLE: return MYCC::FLE;
-  // float check order
-  case ISD::SETO:   return MYCC::FCM;
-  case ISD::SETUO:  return MYCC::FUN;
+static MYCC::CondCodes ISDCCtoMy66000CC(ISD:: CondCode CC, EVT VT) {
+  if (VT == MVT::f64) {
+    switch (CC) {
+    default: llvm_unreachable("Unknown f64 condition code!");
+    // float unordered
+    case ISD::SETUEQ: return MYCC::FEQ;
+    case ISD::SETUNE: return MYCC::FNE;
+    case ISD::SETUGE: return MYCC::FGE;
+    case ISD::SETULT: return MYCC::FLT;
+    case ISD::SETUGT: return MYCC::FGT;
+    case ISD::SETULE: return MYCC::FLE;
+    // float ordered
+    case ISD::SETOEQ: return MYCC::FEQ;
+    case ISD::SETONE: return MYCC::FNE;
+    case ISD::SETOGE: return MYCC::FGE;
+    case ISD::SETOLT: return MYCC::FLT;
+    case ISD::SETOGT: return MYCC::FGT;
+    case ISD::SETOLE: return MYCC::FLE;
+    // float check order
+    case ISD::SETO:   return MYCC::FOR;
+    case ISD::SETUO:  return MYCC::FUN;
+    }
+  } else if (VT == MVT::f32) {
+    switch (CC) {
+    default: llvm_unreachable("Unknown f32 condition code!");
+    // float unordered
+    case ISD::SETUEQ: return MYCC::FEQF;
+    case ISD::SETUNE: return MYCC::FNEF;
+    case ISD::SETUGE: return MYCC::FGEF;
+    case ISD::SETULT: return MYCC::FLTF;
+    case ISD::SETUGT: return MYCC::FGTF;
+    case ISD::SETULE: return MYCC::FLEF;
+    // float ordered
+    case ISD::SETOEQ: return MYCC::FEQF;
+    case ISD::SETONE: return MYCC::FNEF;
+    case ISD::SETOGE: return MYCC::FGEF;
+    case ISD::SETOLT: return MYCC::FLTF;
+    case ISD::SETOGT: return MYCC::FGTF;
+    case ISD::SETOLE: return MYCC::FLEF;
+    // float check order
+    case ISD::SETO:   return MYCC::FORF;
+    case ISD::SETUO:  return MYCC::FUNF;
+    }
+  } else {	// assume integer
+    switch (CC) {
+    default: llvm_unreachable("Unknown integer condition code!");
+    case ISD::SETEQ:  return MYCC::EQ0;
+    case ISD::SETNE:  return MYCC::NE0;
+    case ISD::SETLT:  return MYCC::LT0;
+    case ISD::SETGT:  return MYCC::GT0;
+    case ISD::SETLE:  return MYCC::LE0;
+    case ISD::SETGE:  return MYCC::GE0;
+    }
   }
 }
 
@@ -419,7 +458,8 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerBR_CC\n");
   SDValue RHS = Op.getOperand(3);
   SDValue Dest = Op.getOperand(4);
   SDLoc dl(Op);
-  if (LHS.getValueType().isInteger()) {
+  EVT VT = LHS.getValueType();
+  if (VT.isInteger()) {
     if (isNullConstant(RHS)) {
       if (CC == ISD::SETNE &&
           LHS.getOpcode() == ISD::AND &&
@@ -431,7 +471,7 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerBR_CC\n");
 			   LHS.getOperand(0),
 			   DAG.getConstant(Log2_64(Mask), dl, MVT::i64));
       }
-      MYCC::CondCodes cc = ISDCCtoMy66000CC(CC);
+      MYCC::CondCodes cc = ISDCCtoMy66000CC(CC, VT);
       return DAG.getNode(My66000ISD::BRcond, dl, MVT::Other, Chain, Dest,
 		         LHS, DAG.getConstant(cc, dl, MVT::i64));
     }
@@ -440,9 +480,8 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::LowerBR_CC\n");
     return DAG.getNode(My66000ISD::BRcc, dl, MVT::Other, Chain, Dest, Cmp,
                        DAG.getConstant(cb, dl, MVT::i64));
   } else {	// floating point
-    EVT VT = LHS.getValueType();
-    if (isNullFPConstant(RHS) && VT == MVT::f64) {
-      MYCC::CondCodes cc = ISDCCtoMy66000CC(CC);
+    if (isNullFPConstant(RHS)) {
+      MYCC::CondCodes cc = ISDCCtoMy66000CC(CC, VT);
       return DAG.getNode(My66000ISD::BRcond, dl, MVT::Other, Chain, Dest,
 		         LHS, DAG.getConstant(cc, dl, MVT::i64));
     }

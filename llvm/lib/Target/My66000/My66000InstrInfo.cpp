@@ -285,6 +285,11 @@ unsigned My66000InstrInfo::reverseBRC(MYCC::CondCodes cc) const {
   case MYCC::FEQ: return MYCC::FNE;  case MYCC::FNE: return MYCC::FEQ;
   case MYCC::FGE: return MYCC::FLT;  case MYCC::FLT: return MYCC::FGE;
   case MYCC::FLE: return MYCC::FGT;  case MYCC::FGT: return MYCC::FLE;
+  case MYCC::FOR: return MYCC::FUN;  case MYCC::FUN: return MYCC::FOR;
+  case MYCC::FEQF: return MYCC::FNEF;  case MYCC::FNEF: return MYCC::FEQF;
+  case MYCC::FGEF: return MYCC::FLTF;  case MYCC::FLTF: return MYCC::FGEF;
+  case MYCC::FLEF: return MYCC::FGTF;  case MYCC::FGTF: return MYCC::FLEF;
+  case MYCC::FORF: return MYCC::FUNF;  case MYCC::FUNF: return MYCC::FORF;
   }
 }
 
