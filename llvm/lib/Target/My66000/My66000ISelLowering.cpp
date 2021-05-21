@@ -125,8 +125,6 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::SRL, MVT::i64, Legal);
   setOperationAction(ISD::ROTR, MVT::i64, Legal);
   setOperationAction(ISD::ROTL, MVT::i64, Legal);
-  setOperationAction(ISD::UDIV, MVT::i64, Legal);
-  setOperationAction(ISD::SDIV, MVT::i64, Legal);
   // We don't have a modulo instruction use div+carry
   setOperationAction(ISD::UREM, MVT::i64, Expand);
   setOperationAction(ISD::SREM, MVT::i64, Expand);
@@ -134,11 +132,15 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::MULHU, MVT::i64, Expand);
   setOperationAction(ISD::MULHS, MVT::i64, Expand);
   if (!EnableCarry) {
+    setOperationAction(ISD::UDIV, MVT::i64, Legal);
+    setOperationAction(ISD::SDIV, MVT::i64, Legal);
     setOperationAction(ISD::UDIVREM, MVT::i64, Expand);
     setOperationAction(ISD::SDIVREM, MVT::i64, Expand);
     setOperationAction(ISD::UMUL_LOHI, MVT::i64, Expand);
     setOperationAction(ISD::SMUL_LOHI, MVT::i64, Expand);
   } else {  // Operations that require the CARRY instruction
+    setOperationAction(ISD::UDIV, MVT::i64, Expand);
+    setOperationAction(ISD::SDIV, MVT::i64, Expand);
     setOperationAction(ISD::UDIVREM, MVT::i64, Legal);
     setOperationAction(ISD::SDIVREM, MVT::i64, Legal);
     setOperationAction(ISD::UMUL_LOHI, MVT::i64, Legal);
@@ -1229,45 +1231,62 @@ LLVM_DEBUG(dbgs() << "emitUMULHILO\n" << MI << '\n');
   return BB;
 }
 
-static MachineBasicBlock *emitUDIVREM(MachineInstr &MI,
+static MachineBasicBlock *emitDIVREM(MachineInstr &MI,
                                        MachineBasicBlock *BB, unsigned inst) {
   MachineFunction &MF = *BB->getParent();
   const TargetInstrInfo &TII = *MF.getSubtarget().getInstrInfo();
   DebugLoc DL = MI.getDebugLoc();
-  // ISD::UMUL_LOHI is defined to return the low half first
   unsigned DIV = MI.getOperand(0).getReg();
   unsigned REM = MI.getOperand(1).getReg();
+  unsigned CI;
   MachineRegisterInfo &MRI = BB->getParent()->getRegInfo();
-  unsigned CI = MRI.createVirtualRegister(&My66000::GRegsRegClass);
-LLVM_DEBUG(dbgs() << "emitUDIVREM\n" << MI << '\n');
-
-  BuildMI(*BB, MI, DL, TII.get(My66000::CARRYo), CI)
-      .addImm(2);	// Out
+  bool REMunused = MRI.use_empty(REM);
   MachineInstr *Div;
-  // FIXME - is there a way of doing this without the if?
-  if (inst == My66000::UDIVrr) {
-    unsigned LHS = MI.getOperand(2).getReg();
-    unsigned RHS = MI.getOperand(3).getReg();
-    Div =  BuildMI(*BB, MI, DL, TII.get(inst), DIV)
-	    .addReg(LHS).addReg(RHS)
-	    .addReg(CI, RegState::Implicit)
-	    .addReg(REM, RegState::ImplicitDefine);
-  } else if (inst == My66000::UDIVwr) {
-    unsigned LHS = MI.getOperand(2).getImm();
-    unsigned RHS = MI.getOperand(3).getReg();
-    Div =  BuildMI(*BB, MI, DL, TII.get(inst), DIV)
-	    .addImm(LHS).addReg(RHS)
-	    .addReg(CI, RegState::Implicit)
-	    .addReg(REM, RegState::ImplicitDefine);
-  } else {
-    unsigned LHS = MI.getOperand(2).getReg();
-    unsigned RHS = MI.getOperand(3).getImm();
-    Div =  BuildMI(*BB, MI, DL, TII.get(inst), DIV)
-	    .addReg(LHS).addImm(RHS)
-	    .addReg(CI, RegState::Implicit)
-	    .addReg(REM, RegState::ImplicitDefine);
+LLVM_DEBUG(dbgs() << "emitUDIVREM\n" << MI << '\n');
+  if (!REMunused) {
+    CI = MRI.createVirtualRegister(&My66000::GRegsRegClass);
+    BuildMI(*BB, MI, DL, TII.get(My66000::CARRYo), CI)
+	.addImm(2);	// Out
   }
-  Div->tieOperands(4, 3);
+  switch (inst) {
+    case My66000::UDIVrr:
+    case My66000::SDIVrr:
+    case My66000::SDIVrn:
+    case My66000::SDIVnr:
+    case My66000::SDIVnn: {
+      unsigned LHS = MI.getOperand(2).getReg();
+      unsigned RHS = MI.getOperand(3).getReg();
+      Div =  BuildMI(*BB, MI, DL, TII.get(inst), DIV)
+	    .addReg(LHS).addReg(RHS);
+      break;
+    }
+    case My66000::UDIVwr:
+    case My66000::SDIVwr:
+    case My66000::UDIVdr:
+    case My66000::SDIVdr: {
+      uint64_t LHS = MI.getOperand(2).getImm();
+      unsigned RHS = MI.getOperand(3).getReg();
+      Div =  BuildMI(*BB, MI, DL, TII.get(inst), DIV)
+	    .addImm(LHS).addReg(RHS);
+      break;
+    }
+    case My66000::UDIVri:
+    case My66000::UDIVrw:
+    case My66000::SDIVrx:
+    case My66000::UDIVrd:
+    case My66000::SDIVrd: {
+      unsigned LHS = MI.getOperand(2).getReg();
+      uint64_t RHS = MI.getOperand(3).getImm();
+      Div =  BuildMI(*BB, MI, DL, TII.get(inst), DIV)
+	    .addReg(LHS).addImm(RHS);
+      break;
+    }
+  }
+  if (!REMunused) {	// deal with the CARRY instruction
+    Div->addOperand(MachineOperand::CreateReg(CI, false, true));
+    Div->addOperand(MachineOperand::CreateReg(REM, true, true));
+    Div->tieOperands(4, 3);
+  }
   MI.eraseFromParent(); // The pseudo instruction is gone now.
   return BB;
 }
@@ -1311,10 +1330,20 @@ LLVM_DEBUG(dbgs() << "My66000TargetLowering::EmitInstrWithCustomInserter\n");
   case My66000::UMULHILOrr:	return emitUMULHILO(MI, BB, My66000::MULrr);
   case My66000::UMULHILOri:	return emitUMULHILO(MI, BB, My66000::MULri);
   case My66000::UMULHILOrw:	return emitUMULHILO(MI, BB, My66000::MULrw);
-  case My66000::UDIVREMrr:	return emitUDIVREM(MI, BB, My66000::UDIVrr);
-  case My66000::UDIVREMri:	return emitUDIVREM(MI, BB, My66000::UDIVri);
-  case My66000::UDIVREMrw:	return emitUDIVREM(MI, BB, My66000::UDIVrw);
-  case My66000::UDIVREMwr:	return emitUDIVREM(MI, BB, My66000::UDIVwr);
+  case My66000::UDIVREMrr:	return emitDIVREM(MI, BB, My66000::UDIVrr);
+  case My66000::UDIVREMri:	return emitDIVREM(MI, BB, My66000::UDIVri);
+  case My66000::UDIVREMrw:	return emitDIVREM(MI, BB, My66000::UDIVrw);
+  case My66000::UDIVREMwr:	return emitDIVREM(MI, BB, My66000::UDIVwr);
+  case My66000::UDIVREMrd:	return emitDIVREM(MI, BB, My66000::UDIVrd);
+  case My66000::UDIVREMdr:	return emitDIVREM(MI, BB, My66000::UDIVdr);
+  case My66000::SDIVREMrr:	return emitDIVREM(MI, BB, My66000::SDIVrr);
+  case My66000::SDIVREMrn:	return emitDIVREM(MI, BB, My66000::SDIVrn);
+  case My66000::SDIVREMnr:	return emitDIVREM(MI, BB, My66000::SDIVnr);
+  case My66000::SDIVREMnn:	return emitDIVREM(MI, BB, My66000::SDIVnn);
+  case My66000::SDIVREMrx:	return emitDIVREM(MI, BB, My66000::SDIVrx);
+  case My66000::SDIVREMwr:	return emitDIVREM(MI, BB, My66000::SDIVwr);
+  case My66000::SDIVREMrd:	return emitDIVREM(MI, BB, My66000::SDIVrd);
+  case My66000::SDIVREMdr:	return emitDIVREM(MI, BB, My66000::SDIVdr);
   case My66000::ROTLri:		return emitROTx(MI, BB, My66000::SLLri);
   case My66000::ROTLrr:		return emitROTx(MI, BB, My66000::SLLrr);
   case My66000::ROTRri:		return emitROTx(MI, BB, My66000::SRLri);

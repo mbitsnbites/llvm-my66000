@@ -73,18 +73,6 @@ static unsigned MapLoopCond(unsigned cc) {
   }
 }
 
-static unsigned reverseBRIB(unsigned cb) {
-  switch (cb) {
-  default:
-    llvm_unreachable("Unrecognized condition bit");
-  case MYCB::NE: return MYCB::EQ;  case MYCB::EQ: return MYCB::NE;
-  case MYCB::GT: return MYCB::LE;  case MYCB::LE: return MYCB::GT;
-  case MYCB::GE: return MYCB::LT;  case MYCB::LT: return MYCB::GE;
-  case MYCB::HI: return MYCB::LS;  case MYCB::LS: return MYCB::HI;
-  case MYCB::LO: return MYCB::HS;  case MYCB::HS: return MYCB::LO;
-  }
-}
-
 bool My66000VVMLoop::checkLoop(MachineLoop *Loop) {
 MachineBasicBlock *TB, *BB, *CB;
     TB = Loop->getTopBlock();
@@ -99,8 +87,7 @@ dbgs() << " found candidate inner loop " <<printMBBReference(*TB) << '\n';
   MachineBasicBlock::iterator I = TB->begin();
   MachineBasicBlock::iterator E = TB->getFirstTerminator();
   MachineInstr *BMI, *CMI = nullptr, *AMI = nullptr;
-  Register BReg, CRegL, CRegR;
-  bool invert = false;
+  Register BReg, LReg, CReg;
   unsigned BCnd;
   unsigned Type;
   // Skip any optional terminating unconditional branch
@@ -124,6 +111,7 @@ dbgs() << " found BRC\n";
 dbgs() << " bad branch target\n";
     return false;
   }
+dbgs() << *BMI;
   BReg = BMI->getOperand(1).getReg();
   BCnd = BMI->getOperand(2).getImm();
   --E;
@@ -136,28 +124,21 @@ dbgs() << " bad branch target\n";
       return false;	// calls not allowed in vector mode
     if (MI->getNumDefs() == 1 && MI->getOperand(0).isReg()) {
       if (MI->getOperand(0).getReg() == BReg) {
+dbgs() << *MI;
 	if (MI->isCompare()) {
 dbgs() << " found def of branch variable is compare\n";
-	  CRegL = MI->getOperand(1).getReg();
-	  if (MI->getOperand(2).isReg())
-	    CRegR = MI->getOperand(2).getReg();
-	  else
-	    CRegR = 0;		// invalid
+	  CReg = MI->getOperand(1).getReg();
 	  CMI = MI;
 	} else {
 dbgs() << " found def of branch variable is not compare\n";
 	  AMI = MI;
 	}
       }
-      else if (CMI != nullptr) {
-	if (MI->getOperand(0).getReg() == CRegL) {
-dbgs() << " found def of compare variable LHS\n";
-	  AMI = MI;
-	} else if (MI->getOperand(0).getReg() == CRegR) {
-dbgs() << " found def of compare variable RHS\n";
-	  invert = true;
-	  AMI = MI;
-	}
+      else if (CMI != nullptr && MI->getOperand(0).getReg() == CReg) {
+dbgs() << *MI;
+dbgs() << " found def of compare variable\n";
+	// FIXME - should be and ADD
+	AMI = MI;
       }
     }
     --E;
@@ -171,10 +152,6 @@ dbgs() << " found def of compare variable RHS\n";
   if (Type == 1 && (CMI == nullptr || AMI == nullptr))
     return false;
 
-  if (invert) {
-dbgs() << " can't deal with inverted CMP yet\n";
-    return false;
-  }
 dbgs() << " will vectorize this block:\n" << *TB;
 
   MachineFunction &MF = *TB->getParent();
@@ -190,25 +167,25 @@ dbgs() << " will vectorize this block:\n" << *TB;
   E = TB->getFirstTerminator();
   unsigned Opc;
   if (Type == 1) {
-    MachineOperand &LReg = CMI->getOperand(1);		// loop counter
-    MachineOperand &CBnd = CMI->getOperand(2);
-    MachineOperand &LInc = AMI->getOperand(2);
-    if (invert) {
-dbgs() << "**invert**\n";
-      BCnd = reverseBRIB(BCnd);
-      std::swap(CBnd, LReg);	// FIXME - causes dump
-    }
-dbgs() << "LReg=" << LReg << "; CBnd=" << CBnd << "; LInc=" << LInc << '\n';
-    if (CBnd.isReg()) {
-      if (LInc.isReg()) Opc = My66000::LOOP1rr; else Opc = My66000::LOOP1ri;
+    LReg = AMI->getOperand(1).getReg();		// loop counter
+    if (CMI->getOperand(2).isReg()) {
+      if (AMI->getOperand(2).isReg()) {
+	Opc = My66000::LOOP1rr;
+      } else {
+	Opc = My66000::LOOP1ri;
+      }
     } else {
-      if (LInc.isReg()) Opc = My66000::LOOP1ir; else Opc = My66000::LOOP1ii;
+      if (AMI->getOperand(2).isReg()) {
+	Opc = My66000::LOOP1ir;
+      } else {
+	Opc = My66000::LOOP1ii;
+      }
     }
     LIB = BuildMI(*TB, E, DL, TII.get(Opc))
 	    .addImm(BCnd)
-	    .add(LReg)
-	    .add(CBnd)
-	    .add(LInc);
+	    .addReg(LReg)
+	    .add(CMI->getOperand(2))
+	    .add(AMI->getOperand(2));
 
   } else {	// Type 2
     BCnd = MapLoopCond(BCnd);
@@ -219,8 +196,11 @@ dbgs() << "LReg=" << LReg << "; CBnd=" << CBnd << "; LInc=" << LInc << '\n';
 	      .addImm(0)
 	      .addImm(0);
     } else {
-      if (AMI->getOperand(2).isReg()) Opc = My66000::LOOP1ri;
-      else Opc = My66000::LOOP1ii;
+      if (AMI->getOperand(2).isReg()) {
+	Opc = My66000::LOOP1ri;
+      } else {
+	Opc = My66000::LOOP1ii;
+      }
       LIB = BuildMI(*TB, E, DL, TII.get(Opc))
 	      .addImm(BCnd)
 	      .addReg(BReg)

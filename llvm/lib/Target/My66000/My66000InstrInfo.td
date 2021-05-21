@@ -195,12 +195,18 @@ def       : Pat<(sdiv GRegs:$rs1, (ineg GRegs:$rs2)),
 		(SDIVrn GRegs:$rs1, GRegs:$rs2)>;
 def       : Pat<(sdiv (ineg GRegs:$rs1), GRegs:$rs2),
 		(SDIVnr GRegs:$rs1, GRegs:$rs2)>;
+def       : Pat<(sdiv (ineg GRegs:$rs1), (ineg GRegs:$rs2)),
+		(SDIVnn GRegs:$rs1, GRegs:$rs2)>;
 def NOR   : Pat<(not (or GRegs:$rs1, GRegs:$rs2)),
 		(ANDnn GRegs:$rs1, GRegs:$rs2)>;
+def ORN   : Pat<(or (not GRegs:$rs1), GRegs:$rs2),
+		(ORnr GRegs:$rs1, GRegs:$rs2)>;
 def NAND  : Pat<(not (and GRegs:$rs1, GRegs:$rs2)),
 		(ORnn GRegs:$rs1, GRegs:$rs2)>;
 def ANDN  : Pat<(and GRegs:$rs1, (not GRegs:$rs2)),
 		(ANDrn GRegs:$rs1, GRegs:$rs2)>;
+def XORN  : Pat<(xor (not GRegs:$rs1), GRegs:$rs2),
+		(XORnr GRegs:$rs1, GRegs:$rs2)>;
 def ABS   : Pat<(abs GRegs:$rs1),
 		(SMAXrn GRegs:$rs1, GRegs:$rs1)>;
 //
@@ -216,6 +222,7 @@ multiclass ALUrw<string OpName, bits<6>OpC, bits<5>Flags,
 defm ADD  : ALUrw<"add",  0b100000, 0b10000, add>;
 defm MUL  : ALUrw<"mul",  0b100001, 0b10000, mul>;
 defm UDIV : ALUrw<"div",  0b100010, 0b10000, udiv>;
+defm SDIV : ALUrw<"divs", 0b100010, 0b10010, sdiv>;
 let isCompare = 1 in {
 defm CMP  : ALUrw<"cmp",  0b100100, 0b10000, myCMP>;
 }
@@ -721,6 +728,7 @@ def ADDCARRYrr : Pseudo<
 	(outs GRegs:$sum, GRegs:$co), (ins GRegs:$lhs, GRegs:$rhs, GRegs:$ci),
 	"# ADDCARRYr",
 	[(set GRegs:$sum, GRegs:$co, (addcarry GRegs:$lhs, GRegs:$rhs, GRegs:$ci))]>;
+
 def UMULHILOrr : Pseudo<
 	(outs GRegs:$lo, GRegs:$hi), (ins GRegs:$lhs, GRegs:$rhs),
 	"# UMULHILOrr",
@@ -733,6 +741,7 @@ def UMULHILOrw : Pseudo<
 	(outs GRegs:$lo, GRegs:$hi), (ins GRegs:$lhs, i64imm:$rhs),
 	"# UMULHILOrw",
 	[(set GRegs:$lo, GRegs:$hi, (umul_lohi GRegs:$lhs, sneed32:$rhs))]>;
+
 def UDIVREMrr : Pseudo<
 	(outs GRegs:$div, GRegs:$rem), (ins GRegs:$lhs, GRegs:$rhs),
 	"# UDIVREMrr",
@@ -747,8 +756,50 @@ def UDIVREMrw : Pseudo<
 	[(set GRegs:$div, GRegs:$rem, (udivrem GRegs:$lhs, sneed32:$rhs))]>;
 def UDIVREMwr : Pseudo<
 	(outs GRegs:$div, GRegs:$rem), (ins i64imm:$lhs, GRegs:$rhs),
-	"# UDIVREMrw",
+	"# UDIVREMwr",
 	[(set GRegs:$div, GRegs:$rem, (udivrem simm32:$lhs, GRegs:$rhs))]>;
+def UDIVREMrd : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins GRegs:$lhs, i64imm:$rhs),
+	"# UDIVREMrd",
+	[(set GRegs:$div, GRegs:$rem, (udivrem GRegs:$lhs, sneed64:$rhs))]>;
+def UDIVREMdr : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins i64imm:$lhs, GRegs:$rhs),
+	"# UDIVREMdr",
+	[(set GRegs:$div, GRegs:$rem, (udivrem sneed64:$lhs, GRegs:$rhs))]>;
+
+def SDIVREMrr : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins GRegs:$lhs, GRegs:$rhs),
+	"# SDIVREMrr",
+	[(set GRegs:$div, GRegs:$rem, (sdivrem GRegs:$lhs, GRegs:$rhs))]>;
+def SDIVREMrn : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins GRegs:$lhs, GRegs:$rhs),
+	"# SDIVREMrn",
+	[(set GRegs:$div, GRegs:$rem, (sdivrem GRegs:$lhs, (ineg GRegs:$rhs)))]>;
+def SDIVREMnr : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins GRegs:$lhs, GRegs:$rhs),
+	"# SDIVREMnr",
+	[(set GRegs:$div, GRegs:$rem, (sdivrem (ineg GRegs:$lhs), GRegs:$rhs))]>;
+def SDIVREMnn : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins GRegs:$lhs, GRegs:$rhs),
+	"# SDIVREMnn",
+	[(set GRegs:$div, GRegs:$rem, (sdivrem (ineg GRegs:$lhs), (ineg GRegs:$rhs)))]>;
+def SDIVREMrx : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins GRegs:$lhs, i64imm:$rhs),
+	"# SDIVREMrw",
+	[(set GRegs:$div, GRegs:$rem, (sdivrem GRegs:$lhs, simm32:$rhs))]>;
+def SDIVREMwr : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins i64imm:$lhs, GRegs:$rhs),
+	"# SDIVREMwr",
+	[(set GRegs:$div, GRegs:$rem, (sdivrem simm32:$lhs, GRegs:$rhs))]>;
+def SDIVREMrd : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins GRegs:$lhs, i64imm:$rhs),
+	"# SDIVREMrd",
+	[(set GRegs:$div, GRegs:$rem, (sdivrem GRegs:$lhs, sneed64:$rhs))]>;
+def SDIVREMdr : Pseudo<
+	(outs GRegs:$div, GRegs:$rem), (ins i64imm:$lhs, GRegs:$rhs),
+	"# SDIVREMdr",
+	[(set GRegs:$div, GRegs:$rem, (sdivrem sneed64:$lhs, GRegs:$rhs))]>;
+
 def ROTLrr : Pseudo<
 	(outs GRegs:$dst), (ins GRegs:$lhs, GRegs:$rhs),
 	"# ROTLrr",
