@@ -44,6 +44,7 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
   case mips:           return "mips";
   case mipsel:         return "mipsel";
   case msp430:         return "msp430";
+  case my66000:        return "my66000";
   case nvptx64:        return "nvptx64";
   case nvptx:          return "nvptx";
   case ppc64:          return "powerpc64";
@@ -102,6 +103,8 @@ StringRef Triple::getArchTypePrefix(ArchType Kind) {
   case mipsel:
   case mips64:
   case mips64el:    return "mips";
+
+  case my66000:     return "my66000";
 
   case hexagon:     return "hexagon";
 
@@ -279,6 +282,7 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
     .Case("mips64", mips64)
     .Case("mips64el", mips64el)
     .Case("msp430", msp430)
+    .Case("my66000", my66000)
     .Case("ppc64", ppc64)
     .Case("ppc32", ppc)
     .Case("ppc", ppc)
@@ -446,6 +450,7 @@ static Triple::ArchType parseArch(StringRef ArchName) {
     .Case("ve", Triple::ve)
     .Case("wasm32", Triple::wasm32)
     .Case("wasm64", Triple::wasm64)
+    .Case("my66000", Triple::my66000)
     .Default(Triple::UnknownArch);
 
   // Some architectures require special parsing logic just to compute the
@@ -686,6 +691,7 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
   case Triple::mips:
   case Triple::mipsel:
   case Triple::msp430:
+  case Triple::my66000:
   case Triple::nvptx64:
   case Triple::nvptx:
   case Triple::ppc64le:
@@ -1279,6 +1285,7 @@ static unsigned getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::le64:
   case llvm::Triple::mips64:
   case llvm::Triple::mips64el:
+  case llvm::Triple::my66000:
   case llvm::Triple::nvptx64:
   case llvm::Triple::ppc64:
   case llvm::Triple::ppc64le:
@@ -1401,6 +1408,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::le64:
   case Triple::mips64:
   case Triple::mips64el:
+  case Triple::my66000:
   case Triple::nvptx64:
   case Triple::ppc64:
   case Triple::ppc64le:
@@ -1455,6 +1463,7 @@ Triple Triple::getBigEndianArchVariant() const {
   case Triple::le32:
   case Triple::le64:
   case Triple::msp430:
+  case Triple::my66000:
   case Triple::nvptx64:
   case Triple::nvptx:
   case Triple::r600:
@@ -1543,6 +1552,7 @@ bool Triple::isLittleEndian() const {
   case Triple::mips64el:
   case Triple::mipsel:
   case Triple::msp430:
+  case Triple::my66000:
   case Triple::nvptx64:
   case Triple::nvptx:
   case Triple::ppc64le:
