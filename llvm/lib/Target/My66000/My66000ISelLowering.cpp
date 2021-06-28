@@ -237,7 +237,7 @@ My66000TargetLowering::My66000TargetLowering(const TargetMachine &TM,
   // 32-bit floating point
   addRegisterClass(MVT::f32, &My66000::GRegsRegClass);
   // Why do we have to do the following?
-  ValueTypeActions.setTypeAction(MVT::f32, TypeLegal);
+  //ValueTypeActions.setTypeAction(MVT::f32, TypeLegal);  // Private in LLVM 10.x
   setLoadExtAction(ISD::EXTLOAD, MVT::f64, MVT::f32, Expand);
   setTruncStoreAction(MVT::f64, MVT::f32, Expand);
   setOperationAction(ISD::BITCAST, MVT::f32, Legal);
@@ -283,7 +283,8 @@ bool My66000TargetLowering::isIntDivCheap(EVT VT, AttributeList Attr) const {
   return true;		// let's see what this does
 }
 
-bool My66000TargetLowering::isFMAFasterThanFMulAndFAdd(EVT VT) const {
+bool My66000TargetLowering::isFMAFasterThanFMulAndFAdd(const MachineFunction &,
+                                                       EVT VT) const {
   VT = VT.getScalarType();
 
   if (!VT.isSimple())

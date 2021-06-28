@@ -114,7 +114,7 @@ void My66000AsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
 
   MCSymbol *GVSym = getSymbol(GV);
   const Constant *C = GV->getInitializer();
-  unsigned Align = (unsigned)DL.getPreferredTypeAlignmentShift(C->getType());
+  const Align Alignment(DL.getPrefTypeAlignment(C->getType()));
 
   // Mark the start of the global
   getTargetStreamer().emitCCTopData(GVSym->getName());
@@ -142,7 +142,7 @@ void My66000AsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
     llvm_unreachable("Unknown linkage type!");
   }
 
-  EmitAlignment(Align > 2 ? Align : 2, GV);
+  EmitAlignment(std::max(Alignment, Align(2)), GV);
 
   if (GV->isThreadLocal()) {
     report_fatal_error("TLS is not supported by this target!");
@@ -288,6 +288,6 @@ void My66000AsmPrinter::EmitInstruction(const MachineInstr *MI) {
 }
 
 // Force static initialization.
-extern "C" void LLVMInitializeMy66000AsmPrinter() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMy66000AsmPrinter() {
   RegisterAsmPrinter<My66000AsmPrinter> X(getTheMy66000Target());
 }

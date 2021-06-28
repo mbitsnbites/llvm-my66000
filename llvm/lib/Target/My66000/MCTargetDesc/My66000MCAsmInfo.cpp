@@ -29,6 +29,7 @@ My66000MCAsmInfo::My66000MCAsmInfo(const Triple &TT) {
   ExceptionsType = ExceptionHandling::DwarfCFI;
   DwarfRegNumForCFI = true;
 
-  UsesNonexecutableStackSection = false;
+  // Removed in LLVM 10.x
+  //UsesNonexecutableStackSection = false;
 }
 

@@ -53,7 +53,7 @@ My66000TargetMachine::My66000TargetMachine(const Target &T, const Triple &TT,
 	  T,"e-m:e-p:64:64-i1:8-i8:8-i16:16-i32:32-i64:64-f64:64-a:0:64-n64",
 	  TT, CPU, FS, Options, getEffectiveRelocModel(RM),
           getEffectiveMy66000CodeModel(CM), OL),
-      TLOF(llvm::make_unique<My66000TargetObjectFile>()),
+      TLOF(std::make_unique<My66000TargetObjectFile>()),
       Subtarget(TT, CPU, FS, *this) {
   initAsmInfo();
 }
@@ -109,7 +109,7 @@ void My66000PassConfig::addMachineLateOptimization() {
 }
 
 // Force static initialization.
-extern "C" void LLVMInitializeMy66000Target() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMy66000Target() {
   RegisterTargetMachine<My66000TargetMachine> X(getTheMy66000Target());
 }
 

@@ -46,10 +46,10 @@ My66000InstrInfo::My66000InstrInfo()
 }
 
 void My66000InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
-                               MachineBasicBlock::iterator I,
-                               const DebugLoc &dl, unsigned DstReg,
-                               unsigned SrcReg, bool KillSrc) const {
-  BuildMI(MBB, I, dl, get(My66000::MOVrr), DstReg)
+                                   MachineBasicBlock::iterator I,
+                                   const DebugLoc &DL, MCRegister DestReg,
+                                   MCRegister SrcReg, bool KillSrc) const {
+  BuildMI(MBB, I, DL, get(My66000::MOVrr), DestReg)
       .addReg(SrcReg, getKillRegState(KillSrc));
 }
 

@@ -175,8 +175,9 @@ static void printRegList(raw_ostream &O, unsigned imm21) {
     O << '}';
 }
 
-void My66000InstPrinter::printInst(const MCInst *MI, raw_ostream &O,
-                                 StringRef Annot, const MCSubtargetInfo &STI) {
+void My66000InstPrinter::printInst(const MCInst *MI, uint64_t Address,
+                                   StringRef Annot, const MCSubtargetInfo &STI,
+                                   raw_ostream &O) {
   switch (MI->getOpcode()) {
   case My66000::BRC: {
     const MCOperand &Opcc = MI->getOperand(2);
@@ -250,7 +251,7 @@ void My66000InstPrinter::printInst(const MCInst *MI, raw_ostream &O,
     }
     break;
   default:
-    printInstruction(MI, O);
+    printInstruction(MI, Address, O);
   }
   printAnnotation(O, Annot);
 }

@@ -22,7 +22,8 @@ namespace llvm {
   class My66000FrameLowering: public TargetFrameLowering {
   public:
     explicit My66000FrameLowering(const My66000Subtarget &STI)
-      : TargetFrameLowering(TargetFrameLowering::StackGrowsDown, 8, 0, 8),
+      : TargetFrameLowering(TargetFrameLowering::StackGrowsDown, Align(8), 0,
+                            Align(8)),
         STI(STI) {}
 
 

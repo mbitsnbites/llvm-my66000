@@ -14,6 +14,8 @@
 #include "My66000.h"
 #include "My66000MachineFunctionInfo.h"
 #include "My66000Subtarget.h"
+#include "llvm/CodeGen/MachineLoopInfo.h"
+#include "llvm/InitializePasses.h"
 
 using namespace llvm;
 

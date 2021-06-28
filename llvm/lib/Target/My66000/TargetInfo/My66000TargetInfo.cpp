@@ -15,7 +15,7 @@ Target &llvm::getTheMy66000Target() {
   return TheMy66000Target;
 }
 
-extern "C" void LLVMInitializeMy66000TargetInfo() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMy66000TargetInfo() {
   RegisterTarget<Triple::my66000> X(getTheMy66000Target(), "my66000", "My66000",
 				    "My66000");
 }

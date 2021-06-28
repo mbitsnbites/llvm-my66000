@@ -55,7 +55,8 @@ createMy66000MCSubtargetInfo(const Triple &TT, StringRef CPU, StringRef FS) {
 }
 
 static MCAsmInfo *createMy66000MCAsmInfo(const MCRegisterInfo &MRI,
-                                       const Triple &TT) {
+                                         const Triple &TT,
+                                         const MCTargetOptions &Options) {
   MCAsmInfo *MAI = new My66000MCAsmInfo(TT);
 
   // Initial state of the frame pointer is SP.
@@ -121,7 +122,7 @@ static MCTargetStreamer *createTargetAsmStreamer(MCStreamer &S,
 }
 
 // Force static initialization.
-extern "C" void LLVMInitializeMy66000TargetMC() {
+extern "C" LLVM_EXTERNAL_VISIBILITY void LLVMInitializeMy66000TargetMC() {
   // Register the MC asm info.
   RegisterMCAsmInfoFn X(getTheMy66000Target(), createMy66000MCAsmInfo);
 
